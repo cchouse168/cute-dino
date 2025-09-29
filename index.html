@@ -6,27 +6,21 @@
   <title>恐龍跳躍遊戲</title>
   <!--
     單檔（HTML+CSS+JS）恐龍跳躍遊戲
-    特色：
-    - 20:9 橫向畫面（手機友善），可一鍵全螢幕
-    - 長按空白鍵/螢幕＝可變跳高；短按＝短跳；↑ 前進／後退、↓ 蹲下
-    - 障礙：仙人掌（瘦版）、椰子樹、戰鬥機（上下移動，只射一發）、快龍（快速上下飛）
-    - 道具：+100 寶箱、無敵星星、機關槍（夜晚圖示變白）
-    - 玩家子彈：可擊落戰機（60% 機率）、可摧毀仙人掌/椰子樹/快龍；命中有火花與音效
-    - 每 1000 分白天/黑夜切換；障礙間隔距離隨機
-    - 內建少量自動化測試（輸出於 console）
+    版本：V4.9（Hotfix 2025-09-29）
+    更新：
+    - 修正：重複宣告變數 `mgOn` 造成 SyntaxError 的問題（第二次宣告已移除，改為重用第一次宣告的值）。
+    - 依分數皮膚進化：每 1000 分更換一次外觀，至 10000 分後固定為「金色」皮膚。
+    - 跟隨的小小恐龍隊列距離加大：與本體的起始距離、以及彼此之間的間距皆放大。
   -->
 
-  <!-- Favicon / Icons（使用百分比編碼的單行 SVG，避免 HTML 解析錯誤） -->
+  <!-- Favicon / Icons（用 URL 編碼單行 SVG，避免解析問題） -->
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%2360a5fa'/%3E%3Cstop offset='1' stop-color='%238b5cf6'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='12' fill='url(%23g)'/%3E%3Cg fill='%230b1020'%3E%3Crect x='18' y='28' width='28' height='16' rx='4'/%3E%3Crect x='34' y='18' width='18' height='12' rx='4'/%3E%3Crect x='22' y='44' width='8' height='10' rx='3'/%3E%3Crect x='34' y='44' width='8' height='10' rx='3'/%3E%3Ccircle cx='48' cy='22' r='2.2' fill='%23fff'/%3E%3Ccircle cx='48' cy='22' r='1.1'/%3E%3C/g%3E%3C/svg%3E"/>
   <link rel="mask-icon" color="#0b1020" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect x='18' y='28' width='28' height='16' rx='4'/%3E%3Crect x='34' y='18' width='18' height='12' rx='4'/%3E%3Crect x='22' y='44' width='8' height='10' rx='3'/%3E%3Crect x='34' y='44' width='8' height='10' rx='3'/%3E%3C/svg%3E"/>
   <meta name="theme-color" content="#0b1020"/>
   <meta name="msapplication-TileColor" content="#0b1020"/>
 
   <style>
-    :root{
-      --bg:#f6f7fb; --fg:#1f2937; --accent:#10b981; --danger:#ef4444; --ground:#d4d4d8;
-      --night-sky1:#0b1020; --night-sky2:#0f172a; --night-fg:#e5e7eb;
-    }
+    :root{ --bg:#f6f7fb; --fg:#1f2937; --danger:#ef4444; --night-sky1:#0b1020; --night-sky2:#0f172a; --night-fg:#e5e7eb; }
     html,body{height:100%}
     body{margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif; background:var(--bg); color:var(--fg); display:grid; place-items:center}
     .wrap{width:100vw; height:100vh; display:flex; flex-direction:column}
@@ -53,7 +47,7 @@
 <body>
   <div class="wrap">
     <header>
-      <h1>恐龍跳躍遊戲 · 長按空白鍵/長按螢幕跳更高 · ↓/S 蹲下（恐龍在左側，可前後移動）</h1>
+      <h1>恐龍跳躍遊戲 · 長按空白鍵/螢幕跳更高 · ↓/S 蹲下（恐龍在左側，可前後移動）</h1>
       <div class="btns">
         <button id="btnPause">暫停(P)</button>
         <button id="btnRestart" class="danger">重新開始(R)</button>
@@ -73,7 +67,12 @@
         <div class="pill" id="mgHud" style="display:none">機關槍：0.0s</div>
       </div>
 
-      <!-- 結束提示卡（僅在 gameOver 顯示） -->
+      <!-- HP HUD（主體 1 + 小小恐龍數） -->
+      <div class="hud" style="position:absolute; left:12px; top:12px; right:auto; bottom:auto; gap:8px; pointer-events:none">
+        <div class="pill" id="hpHud">HP：1</div>
+      </div>
+
+      <!-- 結束提示卡（僅在 Game Over 顯示） -->
       <div class="center-tip" id="centerTip" style="display:none">
         <div class="card">
           <div style="font-size:18px; font-weight:800; margin-bottom:10px">遊戲結束！</div>
@@ -91,12 +90,11 @@
   </div>
 
   <script>
-  /* Version: V4.8.0 — 2025-09-29
-     - 調整快龍尺寸（更小），上下擺動幅度與頻率降低，降低難度。
-     - 降低整體難度：障礙間距更大；最高速度上限與加速幅度略降。
-     - 新增障礙「快龍」（Dragon）：快速上下移動；可被機關槍擊落。
-     - 修正前版殘留的語法錯誤、重複片段與拼接錯誤（導致卡在初始或 SyntaxError）。
-     - 內嵌程式有大量行內註解，易於維護。
+  /* Version: V4.9 — Hotfix 2025-09-29
+     修正：移除第二次宣告 mgOn，避免 "Identifier 'mgOn' has already been declared"。
+     變更：
+     1) 每 1000 分更換一次皮膚（tier 0~9），>=10000 分固定為金色（tier 10）。
+     2) 跟隨隊列距離加大（起始距離與每隻間距皆提高）。
   */
   (function(){
     /* =============================
@@ -108,6 +106,7 @@
     const speedEl = document.getElementById('speed');
     const buffEl  = document.getElementById('buff');
     const mgHud   = document.getElementById('mgHud');
+    const hpHud   = document.getElementById('hpHud');
     const tip     = document.getElementById('centerTip');
     const btnPause   = document.getElementById('btnPause');
     const btnRestart = document.getElementById('btnRestart');
@@ -116,7 +115,6 @@
     const volEl      = document.getElementById('vol');
     const gameDiv    = document.getElementById('game');
 
-    // 依視窗計算畫布大小與 DPR，確保在手機上清晰
     function fitCanvas(){
       const vw = window.innerWidth, vh = window.innerHeight;
       let targetW = vw, targetH = Math.floor(vw * 9/20); // 20:9 比例
@@ -147,7 +145,7 @@
         }
       }catch(e){ console.warn('Fullscreen error', e); }
       updateFSUI(); fitCanvas();
-      try{ await window.screen.orientation?.lock?.('landscape'); }catch(_){}
+      try{ await window.screen.orientation?.lock?.('landscape'); }catch(_){/* 忽略 */}
     }
     btnFS.addEventListener('click', toggleFullscreen);
     document.addEventListener('fullscreenchange', ()=>{ updateFSUI(); fitCanvas(); });
@@ -173,20 +171,16 @@
     const W=()=>canvas.clientWidth, H=()=>canvas.clientHeight, LEFT_X=()=>Math.max(80,W()*0.08);
     const state={
       running:false, paused:false, dead:false,
-      time:0, nextSpeedUpAt:12, // nextSpeedUpAt：下一次加速時間點（秒）
+      time:0, nextSpeedUpAt:12,
       speed:300, speedScale:1, speedUpEvery:12,
       gravity:1800, jumpV:-820,
       score:0, best:0,
       obstacles:[], clouds:[], bullets:[], powerups:[], particles:[],
       palmWaves:0,
-      invincibleUntil:0, night:false,
-      // 機關槍狀態（撿到後一段時間自動連射）
+      invincibleUntil:0, night:false, littles:0,
       mgUntil:0, mgFireRate:10, mgFireTimer:0,
-      // 玩家子彈
       pBullets:[],
-      // 降低戰機密度：冷卻時間（秒），>0 時不再生成戰機
       jetCooldown:0,
-      // 可變跳高：按住空白/觸控時，上升期額外推力，最多 jumpHoldMax 秒
       holdingJump:false, jumpHold:0, jumpHoldMax:0.18
     };
     const dino={ x:LEFT_X(), y:0, w:70, h:70, baseH:70, crouchH:46, vy:0, onGround:true, vx:0, crouch:false };
@@ -197,7 +191,7 @@
       state.time=0; state.nextSpeedUpAt=state.speedUpEvery;
       state.speedScale=1; state.score=0;
       state.obstacles.length=0; state.clouds.length=0; state.bullets.length=0; state.powerups.length=0; state.particles.length=0; state.pBullets.length=0;
-      state.palmWaves=0; state.invincibleUntil=0; state.night=false;
+      state.palmWaves=0; state.invincibleUntil=0; state.night=false; state.littles=0;
       state.mgUntil=0; state.mgFireTimer=0; state.jetCooldown=0;
       state.holdingJump=false; state.jumpHold=0;
       gameDiv.classList.remove('night');
@@ -211,51 +205,52 @@
     function restart(){ reset(); start(); }
     function rand(a,b){ return a+Math.random()*(b-a); }
 
-    // Game Over 時點任何地方快速重來（不影響進行中的點擊）
     function attemptQuickRestart(){ if(state.dead){ restart(); return true; } return false; }
-    gameDiv.addEventListener('pointerdown', e=>{ if(attemptQuickRestart()) e.preventDefault(); });
+
+    function handlePress(e){ e.preventDefault(); if(attemptQuickRestart()) return; if(!state.running) start(); if(dino.onGround) doJump(); state.holdingJump=true; }
+    function handleRelease(){ state.holdingJump=false; }
+    gameDiv.addEventListener('pointerdown', handlePress);
+    gameDiv.addEventListener('pointerup', handleRelease);
+    gameDiv.addEventListener('pointercancel', handleRelease);
+    gameDiv.addEventListener('pointerleave', handleRelease);
 
     /* =============================
        生成：障礙與道具
        ============================= */
     function spawnObstacle(){
-      const baseX=W()+60; // 從畫面右側外生成
-      // 權重：仙人掌 50%・椰子樹 30%・快龍 8%・戰機 12%（戰機仍受冷卻限制）
+      const baseX=W()+60; 
       let t='cactus'; const r=Math.random();
       if(r<0.50) t='cactus'; else if(r<0.80) t='palm'; else if(r<0.88) t='dragon'; else t='jet';
-      if(t==='jet' && state.jetCooldown>0) t=(Math.random()<0.5?'cactus':'palm'); // 冷卻中避免戰機
+      if(t==='jet' && state.jetCooldown>0) t=(Math.random()<0.5?'cactus':'palm');
 
       if(t==='cactus'){
-        const h=40+Math.random()*60; state.obstacles.push({type:t,x:baseX,y:groundY()-h,w:22,h}); // 瘦版 w:22
+        const h=40+Math.random()*60; state.obstacles.push({type:t,x:baseX,y:groundY()-h,w:22,h});
       } else if(t==='dragon'){
-        // 快龍（縮小尺寸，降低幅度與頻率以降低難度）
         const w=88,h=54; const yBase=groundY()-(160+Math.random()*140);
         const amp=rand(40,80), freq=rand(0.9,1.6), phase=Math.random()*Math.PI*2;
         state.obstacles.push({type:t,x:baseX,y:yBase,w,h, y0:yBase, amp, freq, phase});
       } else if(t==='jet'){
-        // 舊有戰機：只射一發
         const h=28,w=90; const yBase=groundY()-(120+Math.random()*140); const amp=rand(20,70), freq=rand(0.6,1.2), phase=Math.random()*Math.PI*2;
         state.obstacles.push({type:t,x:baseX,y:yBase,w,h, shootTimer: rand(0.6,1.8), fired:false, y0:yBase, amp, freq, phase});
-        state.jetCooldown = 3 + Math.random()*2; // 3~5 秒冷卻
+        state.jetCooldown = 3 + Math.random()*2; 
       } else {
-        // 椰子樹
         const h=60+Math.random()*40,w=40; state.obstacles.push({type:t,x:baseX,y:groundY()-h,w,h});
       }
     }
     function spawnPowerup(){
-      // 寶箱 +100（60%）、無敵星（25%）、機關槍（15%）
       const r=Math.random(); const baseX=W()+60;
-      if(r<0.60){ const w=34,h=28; state.powerups.push({type:'chest',x:baseX,y:groundY()-h,w,h}); }
-      else if(r<0.85){ const w=32,h=32; const y= groundY() - (90 + Math.random()*120); state.powerups.push({type:'star',x:baseX,y,w,h, spin:0}); }
-      else { const w=52,h=28; const y= groundY() - (70 + Math.random()*120); state.powerups.push({type:'gun',x:baseX,y,w,h, wiggle:0}); }
+      if(r<0.50){ const w=34,h=28; state.powerups.push({type:'chest',x:baseX,y:groundY()-h,w,h}); }
+      else if(r<0.70){ const w=32,h=32; const y= groundY() - (90 + Math.random()*120); state.powerups.push({type:'star',x:baseX,y,w,h, spin:0}); }
+      else if(r<0.85){ const w=52,h=28; const y= groundY() - (70 + Math.random()*120); state.powerups.push({type:'gun',x:baseX,y,w,h, wiggle:0}); }
+      else { const w=30,h=24; const y= groundY() - h; state.powerups.push({type:'mini',x:baseX,y,w,h}); }
     }
-    let spawnTimer=0, powerTimer=3.5; // 下一個障礙/道具的倒數計時
+    let spawnTimer=0, powerTimer=3.5; 
 
     /* =============================
        操作：鍵盤 + 觸控（支援長按可變跳高）
        ============================= */
     const keys={left:false,right:false,down:false};
-    function doJump(){ // 只在落地時才能起跳
+    function doJump(){ 
       if(state.dead) return; if(audio.enabled && !audio.started) ensureAudio(); start();
       if(dino.onGround){ dino.vy=state.jumpV; dino.onGround=false; state.holdingJump=true; state.jumpHold=0; dino.crouch=false; if(audio.enabled) sfx.jump(); }
     }
@@ -273,10 +268,6 @@
       if(e.key==='ArrowRight'||e.key==='d'||e.key==='D') keys.right=false;
       if(e.key==='ArrowDown'||e.key==='s'||e.key==='S'){ keys.down=false; dino.crouch=false; }
     });
-    canvas.addEventListener('pointerdown', e=>{ e.preventDefault(); if(state.dead) return; if(!state.running) start(); if(dino.onGround) doJump(); state.holdingJump=true; });
-    canvas.addEventListener('pointerup',   ()=>{ state.holdingJump=false; });
-    canvas.addEventListener('pointercancel',()=>{ state.holdingJump=false; });
-    canvas.addEventListener('pointerleave', ()=>{ state.holdingJump=false; });
     btnPause.addEventListener('click', ()=>pauseToggle());
     btnRestart.addEventListener('click', ()=>restart());
 
@@ -286,7 +277,7 @@
     function intersects(a,b){ return a.x<b.x+b.w && a.x+a.w>b.x && a.y<b.y+b.h && a.y+a.h>b.y; }
     function spawnSparks(x,y,n=20,baseV=340,life=0.6,size=4,colorDay='#ffd166',colorNight='#ffffff'){
       for(let i=0;i<n;i++){
-        const ang=Math.random()*Math.PI - Math.PI/2; // -90°~+90°
+        const ang=Math.random()*Math.PI - Math.PI/2; 
         const spd=baseV*(0.5+Math.random());
         state.particles.push({x,y, vx:Math.cos(ang)*spd, vy:Math.sin(ang)*spd*0.6-20, life:life*(0.8+Math.random()*0.4), age:0, size, colorDay, colorNight});
       }
@@ -300,82 +291,80 @@
 
     function update(dt){
       state.time+=dt;
-      // 逐步加速：每隔 speedUpEvery 秒增加一點 speedScale（避免整秒內連加，用 nextSpeedUpAt 控制）
       if(state.time >= state.nextSpeedUpAt){ state.speedScale=Math.min(2.0,state.speedScale+0.04); state.nextSpeedUpAt += state.speedUpEvery; }
 
-      // 蹲下高度切換：保持腳底貼地
       const targetH=(dino.crouch && dino.onGround)? dino.crouchH : dino.baseH; if(targetH!==dino.h){ const feet=dino.y+dino.h; dino.h=targetH; dino.y=feet-dino.h; }
 
-      // 可變跳高：上升期長按給額外向上推力；鬆開則快速回收
       dino.vy += state.gravity*dt;
       if(state.holdingJump && !dino.onGround && dino.vy<0 && state.jumpHold<state.jumpHoldMax){ dino.vy += -1200*dt; state.jumpHold += dt; }
       if((!state.holdingJump || state.jumpHold>=state.jumpHoldMax) && dino.vy<0){ dino.vy += 1200*dt; }
 
-      // 位置/邊界
       dino.y += dino.vy*dt; if(dino.y+dino.h>=groundY()){ dino.y=groundY()-dino.h; dino.vy=0; dino.onGround=true; state.jumpHold=0; state.holdingJump=false; } else dino.onGround=false;
       const ax=(keys.left?-1400:0)+(keys.right?1400:0); dino.vx += ax*dt; dino.vx *= 0.88; const maxV=360; dino.vx=Math.max(-maxV,Math.min(maxV,dino.vx)); dino.x += dino.vx*dt; const minX=LEFT_X(), maxX=W()*0.6; if(dino.x<minX){ dino.x=minX; dino.vx=0; } if(dino.x>maxX){ dino.x=maxX; dino.vx=0; }
 
-      // 生成時機：障礙/道具
       spawnTimer -= dt; state.jetCooldown=Math.max(0,state.jetCooldown-dt);
       if(spawnTimer<=0){ spawnObstacle(); const worldVForGap=state.speed*state.speedScale; const gapPx=rand(360,720); spawnTimer = gapPx/Math.max(120,worldVForGap); }
       powerTimer -= dt; if(powerTimer<=0){ powerTimer=5.5+Math.random()*4.5; spawnPowerup(); }
 
       const worldV=state.speed*state.speedScale;
 
-      // 移動：障礙
       for(const ob of state.obstacles){
         ob.x -= worldV*dt;
         if(ob.type==='jet'){
-          ob.y = ob.y0 + Math.sin(state.time*ob.freq + ob.phase)*ob.amp; // 上下移動
-          ob.shootTimer -= dt; // 只射一發
+          ob.y = ob.y0 + Math.sin(state.time*ob.freq + ob.phase)*ob.amp; 
+          ob.shootTimer -= dt; 
           if(!ob.fired && ob.shootTimer<=0){ ob.fired=true; const bx=ob.x-6, by=ob.y+ob.h*0.5; state.bullets.push({x:bx,y:by,w:10,h:4,v:worldV+420}); if(audio.enabled) sfx.shoot(); }
         } else if(ob.type==='dragon'){
-          ob.y = ob.y0 + Math.sin(state.time*ob.freq + ob.phase)*ob.amp; // 快龍上下飛
+          ob.y = ob.y0 + Math.sin(state.time*ob.freq + ob.phase)*ob.amp; 
         }
       }
       state.obstacles = state.obstacles.filter(ob=> ob.x+ob.w > -80);
 
-      // 敵方子彈（戰機）
       for(const b of state.bullets){ b.x -= b.v*dt; }
       state.bullets = state.bullets.filter(b=> b.x+b.w > -60);
 
-      // 道具移動（星星旋轉、機槍上下微幅擺動）
       for(const p of state.powerups){ p.x -= worldV*0.9*dt; if(p.type==='star') p.spin += dt*6; if(p.type==='gun'){ p.wiggle += dt*4; p.y += Math.sin(p.wiggle)*0.3; } }
       state.powerups = state.powerups.filter(p=> p.x+p.w > -60);
 
-      // 計分與日夜切換
       state.score += worldV*dt*0.02; scoreEl.textContent=`分數：${Math.floor(state.score)}`; speedEl.textContent=`速度：${state.speedScale.toFixed(1)}×`;
       const nightNow = isNightForScore(state.score); if(state.night!==nightNow){ state.night=nightNow; if(nightNow) gameDiv.classList.add('night'); else gameDiv.classList.remove('night'); }
 
-      // 顯示 Buff HUD
       const inv = (state.time < state.invincibleUntil); buffEl.style.display= inv? '' : 'none'; if(inv) buffEl.textContent=`無敵剩餘：${Math.max(0,(state.invincibleUntil-state.time)).toFixed(1)}s`;
       const mgOn=(state.time<state.mgUntil); mgHud.style.display= mgOn? '' : 'none'; if(mgOn) mgHud.textContent=`機關槍：${Math.max(0,(state.mgUntil-state.time)).toFixed(1)}s`;
+      hpHud.textContent = `HP：${1+state.littles}`;
 
-      // 撿道具
       const dbox={x:dino.x-dino.w*0.45, y:dino.y, w:dino.w*0.9, h:dino.h};
       for(let i=state.powerups.length-1;i>=0;i--){ const p=state.powerups[i]; if(intersects(dbox,p)){
         if(p.type==='chest'){ state.score+=100; if(audio.enabled) sfx.pickup(); }
         else if(p.type==='star'){ state.invincibleUntil = state.time+6.0; if(audio.enabled) sfx.star(); }
         else if(p.type==='gun'){ state.mgUntil = state.time+6.0; state.mgFireTimer=0; if(audio.enabled) sfx.gun(); }
+        else if(p.type==='mini'){ state.littles++; if(audio.enabled) sfx.pickup(); }
         state.powerups.splice(i,1);
       }}
 
-      // 無敵：碰撞會清除障礙/子彈並有火花與音效
       if(inv){
         for(let j=state.obstacles.length-1;j>=0;j--){ const ob=state.obstacles[j]; if(intersects(dbox,{x:ob.x,y:ob.y,w:ob.w,h:ob.h})){ spawnSparks(ob.x+ob.w*0.5, ob.y+ob.h*0.5,22,360,0.7,5); if(audio.enabled) sfx.starHit(); state.obstacles.splice(j,1);} }
         for(let k=state.bullets.length-1;k>=0;k--){ const b=state.bullets[k]; if(intersects(dbox,b)){ spawnSparks(b.x,b.y,14,320,0.6,4); if(audio.enabled) sfx.starHit(); state.bullets.splice(k,1);} }
       }
-      // 非無敵：碰一次就死亡（不能靠連按空白鍵跳脫）
       if(!inv){
-        for(const ob of state.obstacles){ if(intersects(dbox,{x:ob.x,y:ob.y,w:ob.w,h:ob.h})){ gameOver(); break; } }
-        for(const b of state.bullets){ if(intersects(dbox,b)){ gameOver(); break; } }
+        let collided=false;
+        for(let j=state.obstacles.length-1;j>=0;j--){ const ob=state.obstacles[j]; if(intersects(dbox,{x:ob.x,y:ob.y,w:ob.w,h:ob.h})){ collided=true; spawnSparks(ob.x+ob.w*0.5, ob.y+ob.h*0.5,20,340,0.6,4); state.obstacles.splice(j,1); break; }}
+        for(let k=state.bullets.length-1;k>=0 && !collided;k--){ const b=state.bullets[k]; if(intersects(dbox,b)){ collided=true; spawnSparks(b.x,b.y,14,320,0.5,4); state.bullets.splice(k,1); break; }}
+        if(collided){ if(state.littles>0){ state.littles--; if(audio.enabled) sfx.hit(); } else { gameOver(); } }
       }
 
-      // 機關槍自動連射
-      if(mgOn){ state.mgFireTimer -= dt; if(state.mgFireTimer<=0){ state.mgFireTimer=1.0/state.mgFireRate; const bx=dino.x+dino.w*0.5, by=dino.y+dino.h*0.45; state.pBullets.push({x:bx,y:by,w:12,h:3,v:720}); if(audio.enabled) sfx.mgBurst(); } }
+      // Hotfix: 重用上方的 mgOn，不再重複宣告
+      if(mgOn){
+        state.mgFireTimer -= dt;
+        if(state.mgFireTimer<=0){
+          state.mgFireTimer=1.0/state.mgFireRate;
+          const bx=dino.x+dino.w*0.5, by=dino.y+dino.h*0.45;
+          state.pBullets.push({x:bx,y:by,w:12,h:3,v:720});
+          if(audio.enabled) sfx.mgBurst();
+        }
+      }
       for(const pb of state.pBullets){ pb.x += pb.v*dt; }
 
-      // 玩家子彈命中：地面障礙直接破壞；打中戰機 60% 機率擊落；快龍直接擊落
       for(let i=state.pBullets.length-1;i>=0;i--){
         const pb=state.pBullets[i]; let collided=false;
         for(let j=state.obstacles.length-1;j>=0;j--){ const ob=state.obstacles[j]; if(intersects(pb,{x:ob.x,y:ob.y,w:ob.w,h:ob.h})){
@@ -384,7 +373,7 @@
             if(Math.random()<0.6){ state.score+=150; state.obstacles.splice(j,1); if(audio.enabled) sfx.hit(); }
           } else if(ob.type==='dragon'){
             state.score+=90; state.obstacles.splice(j,1); if(audio.enabled) sfx.hit();
-          } else { // cactus / palm
+          } else { 
             state.score += (ob.type==='cactus'? 60 : 80); state.obstacles.splice(j,1); if(audio.enabled) sfx.hit();
           }
           break;
@@ -392,7 +381,6 @@
         if(collided || pb.x>W()+60){ state.pBullets.splice(i,1); }
       }
 
-      // 粒子壽命
       for(const p of state.particles){ p.age+=dt; p.x+=p.vx*dt; p.y+=p.vy*dt; p.vy += 900*dt*0.6; }
       state.particles = state.particles.filter(p=> p.age<p.life);
     }
@@ -408,7 +396,6 @@
            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.708" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 4v4h4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
            <span style="font-weight:700">點一下螢幕即可重來</span>
          </div>`;
-      // 讓圖示也可點擊重來
       tip.querySelector('#tapRestart')?.addEventListener('pointerdown', ev=>{ ev.preventDefault(); restart(); });
     }
 
@@ -417,29 +404,70 @@
        ============================= */
     function drawGround(){ const y=groundY(); ctx.fillStyle=state.night?'#111827':'#e5e7eb'; ctx.fillRect(0,y,W(),H()-y); ctx.strokeStyle=state.night?'#374151':'#d1d5db'; ctx.lineWidth=2; ctx.beginPath(); const step=24; const offset=(state.time*state.speed*state.speedScale*0.2)%step; for(let x=-offset; x<W()+step; x+=step){ ctx.moveTo(x,y+10); ctx.lineTo(x+14,y+10); } ctx.stroke(); }
     function drawCloud(c){ ctx.save(); ctx.translate(c.x,c.y); ctx.beginPath(); const r=c.r; ctx.fillStyle=state.night?'rgba(255,255,255,.25)':'rgba(255,255,255,.9)'; ctx.arc(-r*0.6,0,r*0.6,0,Math.PI*2); ctx.arc(0,-r*0.2,r*0.8,0,Math.PI*2); ctx.arc(r*0.7,0,r*0.5,0,Math.PI*2); ctx.fill(); ctx.restore(); }
-    function currentSkinTier(){ return Math.floor(state.score/1000); }
-    function drawDino(){ const x=dino.x,y=dino.y,w=dino.w,h=dino.h; const tier=currentSkinTier(); ctx.save(); const gy=groundY(); const sh=Math.max(4,14-(gy-(y+h))*0.06); ctx.fillStyle='rgba(0,0,0,.12)'; ctx.beginPath(); ctx.ellipse(x,gy+6,36,sh,0,0,Math.PI*2); ctx.fill(); ctx.translate(x,y); let body='#374151', head='#374151', eye='#111', deco=null; if(tier>=3){ body='#8b5cf6'; head=body; eye='#0b1020'; deco='crown'; } else if(tier===2){ body='#10b981'; head=body; eye='#0b1020'; deco='wing'; } else if(tier===1){ body='#60a5fa'; head=body; eye='#0b1020'; deco='headband'; } const crouch=dino.crouch && dino.onGround; ctx.fillStyle=body; if(crouch){ roundRect(-w*0.35,h*0.25,w*0.7,h*0.45,10,true); ctx.fillStyle=head; roundRect(0,h*0.02,w*0.42,h*0.28,10,true); } else { roundRect(-w*0.35,h*0.05,w*0.7,h*0.55,10,true); ctx.fillStyle=head; roundRect(w*0.05,-h*0.15,w*0.45,h*0.35,10,true); } const t=state.time*10; const k=Math.sin(t)*6; ctx.fillStyle=body; if(crouch){ roundRect(-w*0.18,h*0.58,w*0.26,h*0.25,8,true); roundRect(0,h*0.58,w*0.26,h*0.25,8,true); } else { roundRect(-w*0.15,h*0.6,w*0.22,h*0.3,8,true); roundRect(w*0.02+k*0.02,h*0.6,w*0.22,h*0.3,8,true); } if(!crouch) roundRect(-w*0.3,h*0.25,w*0.18,h*0.12,6,true); ctx.fillStyle='#fff'; const eyeY=crouch? h*0.12 : -h*0.02; ctx.beginPath(); ctx.arc(w*0.38,eyeY,5,0,Math.PI*2); ctx.fill(); ctx.fillStyle=eye; ctx.beginPath(); ctx.arc(w*0.38,eyeY,2.4,0,Math.PI*2); ctx.fill(); if(deco==='headband'){ ctx.fillStyle='#ef4444'; ctx.fillRect(w*0.02,(crouch? h*0.02 : -h*0.12),w*0.46,6); } else if(deco==='wing'){ ctx.save(); ctx.translate(-w*0.4,h*0.05); ctx.rotate(-0.4); ctx.fillStyle='#a7f3d0'; ctx.beginPath(); ctx.moveTo(0,0); ctx.quadraticCurveTo(-28,-14,-52,0); ctx.quadraticCurveTo(-28,14,0,0); ctx.fill(); ctx.restore(); } else if(deco==='crown'){ ctx.save(); ctx.translate(w*0.22,(crouch? -h*0.06 : -h*0.22)); ctx.fillStyle='#facc15'; ctx.beginPath(); ctx.moveTo(0,8); ctx.lineTo(8,-6); ctx.lineTo(16,8); ctx.lineTo(24,-6); ctx.lineTo(32,8); ctx.lineTo(0,8); ctx.fill(); ctx.restore(); } if(state.time<state.invincibleUntil){ ctx.lineWidth=3; ctx.strokeStyle='rgba(250,204,21,.9)'; roundRect(-w*0.42,-h*0.22,w*0.95,h*1.1,16,false); } ctx.restore(); }
+
+    function currentSkinTier(){ return Math.min(10, Math.floor(state.score/1000)); }
+
     function roundRect(x,y,w,h,r,fill){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); if(fill) ctx.fill(); else ctx.stroke(); }
-    function drawCactus(ob){ const {x,y,w,h}=ob; ctx.save(); ctx.translate(x,y+h); ctx.fillStyle='#16a34a'; roundRect(-w*0.45,-h, w*0.9, h, 6, true); roundRect(-w*0.95,-h*0.58, w*0.35, h*0.44, 6, true); roundRect( w*0.60,-h*0.46, w*0.35, h*0.36, 6, true); ctx.restore(); }
-    function drawJet(ob){ const {x,y,w,h}=ob; ctx.save(); ctx.translate(x,y); ctx.fillStyle=state.night? '#60a5fa' : '#111827'; ctx.beginPath(); ctx.moveTo(0,h*0.5); ctx.lineTo(w*0.55,h*0.5); ctx.lineTo(w*0.85,h*0.35); ctx.lineTo(w,h*0.5); ctx.lineTo(w*0.85,h*0.65); ctx.lineTo(w*0.55,h*0.5); ctx.closePath(); ctx.fill(); ctx.beginPath(); ctx.moveTo(w*0.22,0); ctx.lineTo(w*0.52,h*0.5); ctx.lineTo(w*0.22,h); ctx.closePath(); ctx.fill(); ctx.beginPath(); ctx.moveTo(w*0.12,h*0.2); ctx.lineTo(w*0.2,h*0.5); ctx.lineTo(w*0.12,h*0.8); ctx.closePath(); ctx.fill(); const flame=6+6*Math.sin(state.time*20); ctx.fillStyle=state.night? '#fbbf24' : '#f59e0b'; ctx.beginPath(); ctx.moveTo(-flame,h*0.5); ctx.lineTo(0,h*0.4); ctx.lineTo(0,h*0.6); ctx.closePath(); ctx.fill(); ctx.restore(); }
-    function drawDragon(ob){ // 機能取向的「快龍」外觀（幾何圖形），不依賴外部圖檔
-      const {x,y,w,h}=ob; ctx.save(); ctx.translate(x,y);
-      // 身體
-      ctx.fillStyle = '#f59e0b'; roundRect(w*0.05,h*0.15,w*0.70,h*0.55,16,true);
-      // 腹部
-      ctx.fillStyle = '#fde68a'; roundRect(w*0.16,h*0.36,w*0.46,h*0.28,10,true);
-      // 頭
-      ctx.fillStyle = '#f59e0b'; roundRect(-w*0.08,h*0.18,w*0.34,h*0.30,14,true);
-      // 眼睛
-      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(w*0.12,h*0.30,5,0,Math.PI*2); ctx.fill(); ctx.fillStyle='#111'; ctx.beginPath(); ctx.arc(w*0.12,h*0.30,2.4,0,Math.PI*2); ctx.fill();
-      // 翅膀
-      ctx.fillStyle = state.night? '#93c5fd' : '#10b981';
-      ctx.beginPath(); ctx.moveTo(w*0.38,h*0.18); ctx.quadraticCurveTo(w*0.78,0,w*0.98,h*0.18); ctx.quadraticCurveTo(w*0.72,h*0.34,w*0.38,h*0.22); ctx.closePath(); ctx.fill();
-      // 尾巴
-      ctx.fillStyle = '#f59e0b'; ctx.beginPath(); ctx.moveTo(w*0.70,h*0.58); ctx.quadraticCurveTo(w*0.92,h*0.70,w*1.02,h*0.58); ctx.lineTo(w*0.86,h*0.52); ctx.closePath(); ctx.fill();
+
+    function getSkinForTier(tier){
+      // tier 0: 基本灰；1~9：色相循環變化；>=10：金色（固定）
+      if(tier>=10){ return { body:'#facc15', head:'#facc15', eye:'#0b1020', deco:'crown' }; }
+      if(tier===0){ return { body:'#374151', head:'#374151', eye:'#111', deco:null }; }
+      const hue = (tier*34)%360; // 1~9 漸變
+      const body = `hsl(${hue} 70% 55%)`;
+      const eye = '#0b1020';
+      const pattern = tier % 3; // 1: headband, 2: wing, 0: none
+      const deco = pattern===1? 'headband' : (pattern===2? 'wing' : null);
+      return { body, head:body, eye, deco };
+    }
+
+    function drawDino(){
+      const x=dino.x,y=dino.y,w=dino.w,h=dino.h; const tier=currentSkinTier();
+      ctx.save();
+      const gy=groundY();
+      const sh=Math.max(4,14-(gy-(y+h))*0.06); ctx.fillStyle='rgba(0,0,0,.12)'; ctx.beginPath(); ctx.ellipse(x,gy+6,36,sh,0,0,Math.PI*2); ctx.fill();
+      ctx.translate(x,y);
+
+      const skin = getSkinForTier(tier);
+      let body=skin.body, head=skin.head, eye=skin.eye, deco=skin.deco;
+
+      const crouch=dino.crouch && dino.onGround;
+      ctx.fillStyle=body; if(crouch){ roundRect(-w*0.35,h*0.25,w*0.7,h*0.45,10,true); ctx.fillStyle=head; roundRect(0,h*0.02,w*0.42,h*0.28,10,true); } else { roundRect(-w*0.35,h*0.05,w*0.7,h*0.55,10,true); ctx.fillStyle=head; roundRect(w*0.05,-h*0.15,w*0.45,h*0.35,10,true); }
+
+      const t=state.time*10; const k=Math.sin(t)*6; ctx.fillStyle=body;
+      if(crouch){ roundRect(-w*0.18,h*0.58,w*0.26,h*0.25,8,true); roundRect(0,h*0.58,w*0.26,h*0.25,8,true); }
+      else { roundRect(-w*0.15,h*0.6,w*0.22,h*0.3,8,true); roundRect(w*0.02+k*0.02,h*0.6,w*0.22,h*0.3,8,true); }
+      if(!crouch) roundRect(-w*0.3,h*0.25,w*0.18,h*0.12,6,true);
+
+      ctx.fillStyle='#fff'; const eyeY=crouch? h*0.12 : -h*0.02; ctx.beginPath(); ctx.arc(w*0.38,eyeY,5,0,Math.PI*2); ctx.fill(); ctx.fillStyle=eye; ctx.beginPath(); ctx.arc(w*0.38,eyeY,2.4,0,Math.PI*2); ctx.fill();
+
+      if(deco==='headband'){ ctx.fillStyle='#ef4444'; ctx.fillRect(w*0.02,(crouch? h*0.02 : -h*0.12),w*0.46,6); }
+      else if(deco==='wing'){ ctx.save(); ctx.translate(-w*0.4,h*0.05); ctx.rotate(-0.4); ctx.fillStyle='hsl(160 80% 80%)'; ctx.beginPath(); ctx.moveTo(0,0); ctx.quadraticCurveTo(-28,-14,-52,0); ctx.quadraticCurveTo(-28,14,0,0); ctx.fill(); ctx.restore(); }
+      else if(deco==='crown'){ ctx.save(); ctx.translate(w*0.22,(crouch? -h*0.06 : -h*0.22)); ctx.fillStyle='#facc15'; ctx.beginPath(); ctx.moveTo(0,8); ctx.lineTo(8,-6); ctx.lineTo(16,8); ctx.lineTo(24,-6); ctx.lineTo(32,8); ctx.lineTo(0,8); ctx.fill(); ctx.restore(); }
+
+      if(state.time<state.invincibleUntil){ ctx.lineWidth=3; ctx.strokeStyle='rgba(250,204,21,.9)'; roundRect(-w*0.42,-h*0.22,w*0.95,h*1.1,16,false); }
       ctx.restore();
     }
+
+    function drawCactus(ob){ const {x,y,w,h}=ob; ctx.save(); ctx.translate(x,y+h); ctx.fillStyle='#16a34a'; roundRect(-w*0.45,-h, w*0.9, h, 6, true); roundRect(-w*0.95,-h*0.58, w*0.35, h*0.44, 6, true); roundRect( w*0.60,-h*0.46, w*0.35, h*0.36, 6, true); ctx.restore(); }
+    function drawJet(ob){ const {x,y,w,h}=ob; ctx.save(); ctx.translate(x,y); ctx.fillStyle=state.night? '#60a5fa' : '#111827'; ctx.beginPath(); ctx.moveTo(0,h*0.5); ctx.lineTo(w*0.55,h*0.5); ctx.lineTo(w*0.85,h*0.35); ctx.lineTo(w,h*0.5); ctx.lineTo(w*0.85,h*0.65); ctx.lineTo(w*0.55,h*0.5); ctx.closePath(); ctx.fill(); ctx.beginPath(); ctx.moveTo(w*0.22,0); ctx.lineTo(w*0.52,h*0.5); ctx.lineTo(w*0.22,h); ctx.closePath(); ctx.fill(); ctx.beginPath(); ctx.moveTo(w*0.12,h*0.2); ctx.lineTo(w*0.2,h*0.5); ctx.lineTo(w*0.12,h*0.8); ctx.closePath(); ctx.fill(); const flame=6+6*Math.sin(state.time*20); ctx.fillStyle=state.night? '#fbbf24' : '#f59e0b'; ctx.beginPath(); ctx.moveTo(-flame,h*0.5); ctx.lineTo(0,h*0.4); ctx.lineTo(0,h*0.6); ctx.closePath(); ctx.fill(); ctx.restore(); }
+    function drawDragon(ob){ const {x,y,w,h}=ob; ctx.save(); ctx.translate(x,y); ctx.fillStyle = '#f59e0b'; roundRect(w*0.05,h*0.15,w*0.70,h*0.55,16,true); ctx.fillStyle = '#fde68a'; roundRect(w*0.16,h*0.36,w*0.46,h*0.28,10,true); ctx.fillStyle = '#f59e0b'; roundRect(-w*0.08,h*0.18,w*0.34,h*0.30,14,true); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(w*0.12,h*0.30,5,0,Math.PI*2); ctx.fill(); ctx.fillStyle='#111'; ctx.beginPath(); ctx.arc(w*0.12,h*0.30,2.4,0,Math.PI*2); ctx.fill(); ctx.fillStyle = state.night? '#93c5fd' : '#10b981'; ctx.beginPath(); ctx.moveTo(w*0.38,h*0.18); ctx.quadraticCurveTo(w*0.78,0,w*0.98,h*0.18); ctx.quadraticCurveTo(w*0.72,h*0.34,w*0.38,h*0.22); ctx.closePath(); ctx.fill(); ctx.fillStyle = '#f59e0b'; ctx.beginPath(); ctx.moveTo(w*0.70,h*0.58); ctx.quadraticCurveTo(w*0.92,h*0.70,w*1.02,h*0.58); ctx.lineTo(w*0.86,h*0.52); ctx.closePath(); ctx.fill(); ctx.restore(); }
     function drawPalm(ob){ const {x,y,w,h}=ob; ctx.save(); ctx.translate(x+w*0.5,y+h); ctx.fillStyle='#8b5a2b'; roundRect(-w*0.25,-h,w*0.5,h,6,true); ctx.translate(0,-h); ctx.rotate(Math.sin(state.palmWaves + x*0.01)*0.06); const leaf=(ang)=>{ ctx.save(); ctx.rotate(ang); ctx.fillStyle='#10b981'; ctx.beginPath(); ctx.moveTo(0,0); ctx.quadraticCurveTo(32,-6,64,0); ctx.quadraticCurveTo(32,6,0,0); ctx.fill(); ctx.restore(); }; leaf(-0.6); leaf(0); leaf(0.6); ctx.restore(); }
+    function drawMiniPowerup(p){ const {x,y,w,h}=p; ctx.save(); ctx.translate(x,y); ctx.fillStyle='#374151'; roundRect(0,h*0.25,w*0.8,h*0.6,6,true); ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(w*0.6,h*0.45,2.5,0,Math.PI*2); ctx.fill(); ctx.restore(); }
+    function drawFollower(x,y,scale=0.55){ ctx.save(); ctx.translate(x,y); const w=70*scale,h=70*scale; ctx.fillStyle='#4b5563'; roundRect(-w*0.35,h*0.05,w*0.7,h*0.55,8,true); ctx.fillStyle='#4b5563'; roundRect(w*0.05,-h*0.15,w*0.45,h*0.35,8,true); ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(w*0.38,-h*0.02,3.2,0,Math.PI*2); ctx.fill(); ctx.fillStyle='#111'; ctx.beginPath(); ctx.arc(w*0.38,-h*0.02,1.5,0,Math.PI*2); ctx.fill(); ctx.restore(); }
+    function drawFollowers(){
+      // 與本體同步姿勢，並放大與本體/彼此的距離（V4.9 調整）
+      const baseY = dino.y + (dino.h - 40);
+      const baseOffset = 50;  // 與本體的起始距離（原 26*1 -> 50）
+      const stepOffset = 38;  // 每隻之間的距離（原 26 -> 38）
+      for(let i=0;i<state.littles;i++){
+        const offset = baseOffset + stepOffset * i;   
+        const phase  = i*0.7;              
+        const bob    = Math.sin(state.time*10 + phase) * 1.2; 
+        const fy     = baseY + bob;
+        drawFollower(dino.x - offset, fy);
+      }
+    }
     function drawBullet(b){ ctx.save(); ctx.translate(b.x,b.y); ctx.fillStyle=state.night? '#e5e7eb' : '#ef4444'; ctx.fillRect(0,0,b.w,b.h); ctx.restore(); }
     function drawChest(p){ const {x,y,w,h}=p; ctx.save(); ctx.translate(x,y); ctx.fillStyle='#f59e0b'; roundRect(0,0,w,h,4,true); ctx.fillStyle='#8b5a2b'; ctx.fillRect(0,h*0.5,w,h*0.18); ctx.fillStyle='#fff'; ctx.fillRect(w*0.48,h*0.2,w*0.04,h*0.6); ctx.fillRect(w*0.3,h*0.45,w*0.4,h*0.08); ctx.restore(); }
     function drawStar(p){ const {x,y,w,h,spin}=p; const r=Math.min(w,h)/2; ctx.save(); ctx.translate(x+w/2,y+h/2); ctx.rotate(spin); const spikes=5; let rot=Math.PI/2*3; const step=Math.PI/spikes; ctx.beginPath(); ctx.moveTo(0,-r); for(let i=0;i<spikes;i++){ ctx.lineTo(Math.cos(rot)*r,Math.sin(rot)*r); rot+=step; ctx.lineTo(Math.cos(rot)*r*0.5,Math.sin(rot)*r*0.5); rot+=step; } ctx.lineTo(0,-r); ctx.closePath(); ctx.fillStyle='#facc15'; ctx.fill(); ctx.restore(); }
@@ -447,7 +475,7 @@
     function drawPlayerBullet(pb){ ctx.save(); ctx.translate(pb.x,pb.y); ctx.fillStyle='#2563eb'; ctx.fillRect(0,0,pb.w,pb.h); ctx.restore(); }
     function drawOb(ob){ if(ob.type==='cactus') drawCactus(ob); else if(ob.type==='jet') drawJet(ob); else if(ob.type==='dragon') drawDragon(ob); else drawPalm(ob); }
     function drawParticles(){ for(const p of state.particles){ const t=p.age/p.life; const alpha=Math.max(0,1-t); ctx.save(); ctx.globalAlpha=alpha; const col=state.night? p.colorNight : p.colorDay; ctx.fillStyle=col; ctx.shadowColor=col; ctx.shadowBlur=8; ctx.fillRect(p.x,p.y,p.size,p.size*0.75); ctx.restore(); } }
-    function draw(dt){ ctx.clearRect(0,0,canvas.width,canvas.height); for(const c of state.clouds) drawCloud(c); drawGround(); for(const ob of state.obstacles) drawOb(ob); for(const b of state.bullets) drawBullet(b); for(const p of state.powerups){ if(p.type==='chest') drawChest(p); else if(p.type==='star') drawStar(p); else drawGun(p); } for(const pb of state.pBullets) drawPlayerBullet(pb); drawParticles(); drawDino(); }
+    function draw(dt){ ctx.clearRect(0,0,canvas.width,canvas.height); for(const c of state.clouds) drawCloud(c); drawGround(); for(const ob of state.obstacles) drawOb(ob); for(const b of state.bullets) drawBullet(b); for(const p of state.powerups){ if(p.type==='chest') drawChest(p); else if(p.type==='star') drawStar(p); else if(p.type==='gun') drawGun(p); else drawMiniPowerup(p); } for(const pb of state.pBullets) drawPlayerBullet(pb); drawParticles(); drawFollowers(); drawDino(); }
 
     /* =============================
        自動化測試（console）
@@ -458,24 +486,44 @@
       assert('restart() exists', typeof restart==='function');
       assert('attemptQuickRestart() exists', typeof attemptQuickRestart==='function');
 
-      try{ // 仙人掌可被機關槍摧毀
+      try{ 
         state.obstacles.length=0; state.pBullets.length=0; const h=80,w=22; const ox=dino.x+120; const oy=groundY()-h; state.obstacles.push({type:'cactus',x:ox,y:oy,w,h}); state.pBullets.push({x:ox+2,y:oy+h*0.5,w:12,h:3,v:0}); const b0=state.obstacles.length; update(0); const b1=state.obstacles.length; assert('MG bullet destroys cactus', b1===b0-1);
       }catch(e){ assert('MG bullet destroys cactus (no error)', false); }
 
-      try{ // 快龍可被機關槍直接擊落
+      try{ 
         state.obstacles.length=0; state.pBullets.length=0; const w=110,h=68; const ox=dino.x+140; const oy=groundY()-200; state.obstacles.push({type:'dragon',x:ox,y:oy,w,h,y0:oy,amp:80,freq:1.6,phase:0}); state.pBullets.push({x:ox+5,y:oy+h*0.5,w:12,h:3,v:0}); const a0=state.obstacles.length; update(0); const a1=state.obstacles.length; assert('MG bullet destroys dragon', a1===a0-1);
       }catch(e){ assert('MG bullet destroys dragon (no error)', false); }
 
-      try{ // 戰機只發射一發
+      try{ 
         state.obstacles.length=0; state.bullets.length=0; const h=28,w=90; const yBase=groundY()-180; state.obstacles.push({type:'jet',x:dino.x+260,y:yBase,w,h,shootTimer:0.02,fired:false,y0:yBase,amp:20,freq:1,phase:0}); for(let i=0;i<30;i++) update(0.016); const count=state.bullets.length; for(let i=0;i<60;i++) update(0.016); assert('Jet fires once', count===1 && state.bullets.length===1);
       }catch(e){ assert('Jet fires once (no error)', false); }
+
+      try{ 
+        state.littles=0; state.powerups=[{type:'mini',x:dino.x,y:dino.y,w:20,h:20}]; update(0); const hpAfter=1+state.littles; assert('Pickup mini increases HP', hpAfter>=2);
+      }catch(e){ assert('Pickup mini increases HP (no error)', false); }
+
+      try{ 
+        reset(); state.littles=2; state.obstacles=[{type:'cactus',x:dino.x+10,y:groundY()-60,w:22,h:60}]; update(0.016); const alive=!state.dead; const remaining=state.littles; assert('Hit reduces HP if littles>0', alive && remaining===1);
+      }catch(e){ assert('Hit reduces HP if littles>0 (no error)', false); }
+
+      try{ 
+        state.score=1100; const before=state.night; update(0); assert('Night mode toggles after 1000', state.night===true || before!==state.night);
+      }catch(e){ assert('Night mode toggles after 1000 (no error)', false); }
+
+      try{ 
+        reset(); state.powerups=[{type:'star',x:dino.x,y:dino.y,w:20,h:20,spin:0}]; const t0=state.time; update(0); assert('Pickup star sets invincibleUntil', state.invincibleUntil>t0);
+      }catch(e){ assert('Pickup star sets invincibleUntil (no error)', false); }
+
+      // 新增：機關槍（mgOn）自動發射測試
+      try{
+        reset(); state.mgUntil = state.time + 0.5; state.mgFireRate = 10; state.mgFireTimer = 0; const before = state.pBullets.length; update(0.016); const after = state.pBullets.length; assert('MG spawns bullets when active', after>before);
+      }catch(e){ assert('MG spawns bullets when active (no error)', false); }
 
       console.group('%cSelf Tests','color:#10b981;font-weight:700');
       tests.forEach(t=>console[t.pass?'log':'error'](`${t.pass?'✅':'❌'} ${t.n}`));
       console.groupEnd();
     }
 
-    // 啟動
     reset();
     window.__runTests = runSelfTests;
   })();
