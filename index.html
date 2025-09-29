@@ -6,19 +6,18 @@
   <title>恐龍跳躍遊戲</title>
   <!--
     單檔（HTML+CSS+JS）恐龍跳躍遊戲
-    版本：V4.9（Hotfix 2025-09-29）
-    更新：
-    - 修正：重複宣告變數 `mgOn` 造成 SyntaxError 的問題（第二次宣告已移除，改為重用第一次宣告的值）。
-    - 依分數皮膚進化：每 1000 分更換一次外觀，至 10000 分後固定為「金色」皮膚。
-    - 跟隨的小小恐龍隊列距離加大：與本體的起始距離、以及彼此之間的間距皆放大。
+    版本：V10.2 — 2025-09-29
+    更新（V10.2 修正）：
+    - 修復 ReferenceError：呼叫了 drawPalm 但未定義。
+      ➊ 新增 drawPalm()（繪製棕櫚樹障礙），
+      ➋ 新增自動化測試：確保 drawPalm 存在且在繪製過程不會丟錯。
+    維持（V10）：
+    - 小小恐龍顏色與玩家同步（含 10000 分金色）。
+    - V4.9 的 mgOn 重複宣告修正與各項功能。
   -->
 
-  <!-- Favicon / Icons（用 URL 編碼單行 SVG，避免解析問題） -->
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%2360a5fa'/%3E%3Cstop offset='1' stop-color='%238b5cf6'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='12' fill='url(%23g)'/%3E%3Cg fill='%230b1020'%3E%3Crect x='18' y='28' width='28' height='16' rx='4'/%3E%3Crect x='34' y='18' width='18' height='12' rx='4'/%3E%3Crect x='22' y='44' width='8' height='10' rx='3'/%3E%3Crect x='34' y='44' width='8' height='10' rx='3'/%3E%3Ccircle cx='48' cy='22' r='2.2' fill='%23fff'/%3E%3Ccircle cx='48' cy='22' r='1.1'/%3E%3C/g%3E%3C/svg%3E"/>
-  <link rel="mask-icon" color="#0b1020" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect x='18' y='28' width='28' height='16' rx='4'/%3E%3Crect x='34' y='18' width='18' height='12' rx='4'/%3E%3Crect x='22' y='44' width='8' height='10' rx='3'/%3E%3Crect x='34' y='44' width='8' height='10' rx='3'/%3E%3C/svg%3E"/>
   <meta name="theme-color" content="#0b1020"/>
-  <meta name="msapplication-TileColor" content="#0b1020"/>
-
   <style>
     :root{ --bg:#f6f7fb; --fg:#1f2937; --danger:#ef4444; --night-sky1:#0b1020; --night-sky2:#0f172a; --night-fg:#e5e7eb; }
     html,body{height:100%}
@@ -67,12 +66,10 @@
         <div class="pill" id="mgHud" style="display:none">機關槍：0.0s</div>
       </div>
 
-      <!-- HP HUD（主體 1 + 小小恐龍數） -->
       <div class="hud" style="position:absolute; left:12px; top:12px; right:auto; bottom:auto; gap:8px; pointer-events:none">
         <div class="pill" id="hpHud">HP：1</div>
       </div>
 
-      <!-- 結束提示卡（僅在 Game Over 顯示） -->
       <div class="center-tip" id="centerTip" style="display:none">
         <div class="card">
           <div style="font-size:18px; font-weight:800; margin-bottom:10px">遊戲結束！</div>
@@ -90,16 +87,8 @@
   </div>
 
   <script>
-  /* Version: V4.9 — Hotfix 2025-09-29
-     修正：移除第二次宣告 mgOn，避免 "Identifier 'mgOn' has already been declared"。
-     變更：
-     1) 每 1000 分更換一次皮膚（tier 0~9），>=10000 分固定為金色（tier 10）。
-     2) 跟隨隊列距離加大（起始距離與每隻間距皆提高）。
-  */
+  /* Version: V10.2 — 2025-09-29 */
   (function(){
-    /* =============================
-       變數/DOM 取得與畫面適配
-       ============================= */
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
     const scoreEl = document.getElementById('score');
@@ -117,7 +106,7 @@
 
     function fitCanvas(){
       const vw = window.innerWidth, vh = window.innerHeight;
-      let targetW = vw, targetH = Math.floor(vw * 9/20); // 20:9 比例
+      let targetW = vw, targetH = Math.floor(vw * 9/20);
       if(targetH > vh){ targetH = vh; targetW = Math.floor(vh * 20/9); }
       gameDiv.style.width  = targetW + 'px';
       gameDiv.style.height = targetH + 'px';
@@ -130,31 +119,22 @@
     }
     window.addEventListener('resize', fitCanvas); fitCanvas();
 
-    /* ---------- 全螢幕 ---------- */
     function isFullscreen(){ return document.fullscreenElement || document.webkitFullscreenElement; }
     function updateFSUI(){ btnFS.textContent = isFullscreen()? '退出全螢幕' : '全螢幕'; }
     async function toggleFullscreen(){
       const el = gameDiv; const doc=document;
       const enter = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen || el.mozRequestFullScreen;
       const exit  = doc.exitFullscreen || doc.webkitExitFullscreen || doc.msExitFullscreen || doc.mozCancelFullScreen;
-      try{
-        if(!isFullscreen()){
-          if(enter) await enter.call(el); else if(document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen();
-        }else{
-          if(exit) await exit.call(doc);
-        }
-      }catch(e){ console.warn('Fullscreen error', e); }
+      try{ if(!isFullscreen()){ if(enter) await enter.call(el); else if(document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen(); } else { if(exit) await exit.call(doc); } }
+      catch(e){ console.warn('Fullscreen error', e); }
       updateFSUI(); fitCanvas();
-      try{ await window.screen.orientation?.lock?.('landscape'); }catch(_){/* 忽略 */}
+      try{ await window.screen.orientation?.lock?.('landscape'); }catch(_){ }
     }
     btnFS.addEventListener('click', toggleFullscreen);
     document.addEventListener('fullscreenchange', ()=>{ updateFSUI(); fitCanvas(); });
     document.addEventListener('webkitfullscreenchange', ()=>{ updateFSUI(); fitCanvas(); });
     document.addEventListener('keydown', e=>{ if(e.key==='f'||e.key==='F') toggleFullscreen(); });
 
-    /* =============================
-       音效（SFX only）
-       ============================= */
     let AC=null, master=null, noiseBuf=null; const audio={enabled:true, volume:0.6, started:false};
     function ensureAudio(){ if(AC) return; AC=new (window.AudioContext||window.webkitAudioContext)(); master=AC.createGain(); master.gain.value=audio.volume; master.connect(AC.destination); const len=AC.sampleRate*1.0; noiseBuf=AC.createBuffer(1,len,AC.sampleRate); const data=noiseBuf.getChannelData(0); for(let i=0;i<len;i++){ data[i]=(Math.random()*2-1)*(1-i/len);} audio.started=true; }
     function setVolume(v){ audio.volume=v; if(master) master.gain.value=v; }
@@ -165,9 +145,6 @@
     volEl?.addEventListener('input', e=> setVolume(parseFloat(e.target.value||'0.6')));
     document.addEventListener('keydown', e=>{ if(e.key==='m'||e.key==='M') btnAudio.click(); });
 
-    /* =============================
-       遊戲狀態
-       ============================= */
     const W=()=>canvas.clientWidth, H=()=>canvas.clientHeight, LEFT_X=()=>Math.max(80,W()*0.08);
     const state={
       running:false, paused:false, dead:false,
@@ -214,9 +191,6 @@
     gameDiv.addEventListener('pointercancel', handleRelease);
     gameDiv.addEventListener('pointerleave', handleRelease);
 
-    /* =============================
-       生成：障礙與道具
-       ============================= */
     function spawnObstacle(){
       const baseX=W()+60; 
       let t='cactus'; const r=Math.random();
@@ -246,9 +220,6 @@
     }
     let spawnTimer=0, powerTimer=3.5; 
 
-    /* =============================
-       操作：鍵盤 + 觸控（支援長按可變跳高）
-       ============================= */
     const keys={left:false,right:false,down:false};
     function doJump(){ 
       if(state.dead) return; if(audio.enabled && !audio.started) ensureAudio(); start();
@@ -271,9 +242,6 @@
     btnPause.addEventListener('click', ()=>pauseToggle());
     btnRestart.addEventListener('click', ()=>restart());
 
-    /* =============================
-       輔助：碰撞與粒子
-       ============================= */
     function intersects(a,b){ return a.x<b.x+b.w && a.x+a.w>b.x && a.y<b.y+b.h && a.y+a.h>b.y; }
     function spawnSparks(x,y,n=20,baseV=340,life=0.6,size=4,colorDay='#ffd166',colorNight='#ffffff'){
       for(let i=0;i<n;i++){
@@ -283,9 +251,6 @@
       }
     }
 
-    /* =============================
-       主迴圈（update → draw）
-       ============================= */
     let lastTs=0; function loop(ts){ if(!state.running||state.paused) return; const dt=Math.min(0.032,(ts-lastTs)/1000); lastTs=ts; update(dt); draw(dt); requestAnimationFrame(loop); }
     function isNightForScore(score){ return (Math.floor(score/1000)%2)===1; }
 
@@ -353,7 +318,6 @@
         if(collided){ if(state.littles>0){ state.littles--; if(audio.enabled) sfx.hit(); } else { gameOver(); } }
       }
 
-      // Hotfix: 重用上方的 mgOn，不再重複宣告
       if(mgOn){
         state.mgFireTimer -= dt;
         if(state.mgFireTimer<=0){
@@ -399,24 +363,19 @@
       tip.querySelector('#tapRestart')?.addEventListener('pointerdown', ev=>{ ev.preventDefault(); restart(); });
     }
 
-    /* =============================
-       繪製
-       ============================= */
+    function roundRect(x,y,w,h,r,fill){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); if(fill) ctx.fill(); else ctx.stroke(); }
+
     function drawGround(){ const y=groundY(); ctx.fillStyle=state.night?'#111827':'#e5e7eb'; ctx.fillRect(0,y,W(),H()-y); ctx.strokeStyle=state.night?'#374151':'#d1d5db'; ctx.lineWidth=2; ctx.beginPath(); const step=24; const offset=(state.time*state.speed*state.speedScale*0.2)%step; for(let x=-offset; x<W()+step; x+=step){ ctx.moveTo(x,y+10); ctx.lineTo(x+14,y+10); } ctx.stroke(); }
     function drawCloud(c){ ctx.save(); ctx.translate(c.x,c.y); ctx.beginPath(); const r=c.r; ctx.fillStyle=state.night?'rgba(255,255,255,.25)':'rgba(255,255,255,.9)'; ctx.arc(-r*0.6,0,r*0.6,0,Math.PI*2); ctx.arc(0,-r*0.2,r*0.8,0,Math.PI*2); ctx.arc(r*0.7,0,r*0.5,0,Math.PI*2); ctx.fill(); ctx.restore(); }
 
     function currentSkinTier(){ return Math.min(10, Math.floor(state.score/1000)); }
-
-    function roundRect(x,y,w,h,r,fill){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); if(fill) ctx.fill(); else ctx.stroke(); }
-
     function getSkinForTier(tier){
-      // tier 0: 基本灰；1~9：色相循環變化；>=10：金色（固定）
       if(tier>=10){ return { body:'#facc15', head:'#facc15', eye:'#0b1020', deco:'crown' }; }
       if(tier===0){ return { body:'#374151', head:'#374151', eye:'#111', deco:null }; }
-      const hue = (tier*34)%360; // 1~9 漸變
+      const hue = (tier*34)%360;
       const body = `hsl(${hue} 70% 55%)`;
       const eye = '#0b1020';
-      const pattern = tier % 3; // 1: headband, 2: wing, 0: none
+      const pattern = tier % 3;
       const deco = pattern===1? 'headband' : (pattern===2? 'wing' : null);
       return { body, head:body, eye, deco };
     }
@@ -449,25 +408,58 @@
       ctx.restore();
     }
 
-    function drawCactus(ob){ const {x,y,w,h}=ob; ctx.save(); ctx.translate(x,y+h); ctx.fillStyle='#16a34a'; roundRect(-w*0.45,-h, w*0.9, h, 6, true); roundRect(-w*0.95,-h*0.58, w*0.35, h*0.44, 6, true); roundRect( w*0.60,-h*0.46, w*0.35, h*0.36, 6, true); ctx.restore(); }
-    function drawJet(ob){ const {x,y,w,h}=ob; ctx.save(); ctx.translate(x,y); ctx.fillStyle=state.night? '#60a5fa' : '#111827'; ctx.beginPath(); ctx.moveTo(0,h*0.5); ctx.lineTo(w*0.55,h*0.5); ctx.lineTo(w*0.85,h*0.35); ctx.lineTo(w,h*0.5); ctx.lineTo(w*0.85,h*0.65); ctx.lineTo(w*0.55,h*0.5); ctx.closePath(); ctx.fill(); ctx.beginPath(); ctx.moveTo(w*0.22,0); ctx.lineTo(w*0.52,h*0.5); ctx.lineTo(w*0.22,h); ctx.closePath(); ctx.fill(); ctx.beginPath(); ctx.moveTo(w*0.12,h*0.2); ctx.lineTo(w*0.2,h*0.5); ctx.lineTo(w*0.12,h*0.8); ctx.closePath(); ctx.fill(); const flame=6+6*Math.sin(state.time*20); ctx.fillStyle=state.night? '#fbbf24' : '#f59e0b'; ctx.beginPath(); ctx.moveTo(-flame,h*0.5); ctx.lineTo(0,h*0.4); ctx.lineTo(0,h*0.6); ctx.closePath(); ctx.fill(); ctx.restore(); }
-    function drawDragon(ob){ const {x,y,w,h}=ob; ctx.save(); ctx.translate(x,y); ctx.fillStyle = '#f59e0b'; roundRect(w*0.05,h*0.15,w*0.70,h*0.55,16,true); ctx.fillStyle = '#fde68a'; roundRect(w*0.16,h*0.36,w*0.46,h*0.28,10,true); ctx.fillStyle = '#f59e0b'; roundRect(-w*0.08,h*0.18,w*0.34,h*0.30,14,true); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(w*0.12,h*0.30,5,0,Math.PI*2); ctx.fill(); ctx.fillStyle='#111'; ctx.beginPath(); ctx.arc(w*0.12,h*0.30,2.4,0,Math.PI*2); ctx.fill(); ctx.fillStyle = state.night? '#93c5fd' : '#10b981'; ctx.beginPath(); ctx.moveTo(w*0.38,h*0.18); ctx.quadraticCurveTo(w*0.78,0,w*0.98,h*0.18); ctx.quadraticCurveTo(w*0.72,h*0.34,w*0.38,h*0.22); ctx.closePath(); ctx.fill(); ctx.fillStyle = '#f59e0b'; ctx.beginPath(); ctx.moveTo(w*0.70,h*0.58); ctx.quadraticCurveTo(w*0.92,h*0.70,w*1.02,h*0.58); ctx.lineTo(w*0.86,h*0.52); ctx.closePath(); ctx.fill(); ctx.restore(); }
-    function drawPalm(ob){ const {x,y,w,h}=ob; ctx.save(); ctx.translate(x+w*0.5,y+h); ctx.fillStyle='#8b5a2b'; roundRect(-w*0.25,-h,w*0.5,h,6,true); ctx.translate(0,-h); ctx.rotate(Math.sin(state.palmWaves + x*0.01)*0.06); const leaf=(ang)=>{ ctx.save(); ctx.rotate(ang); ctx.fillStyle='#10b981'; ctx.beginPath(); ctx.moveTo(0,0); ctx.quadraticCurveTo(32,-6,64,0); ctx.quadraticCurveTo(32,6,0,0); ctx.fill(); ctx.restore(); }; leaf(-0.6); leaf(0); leaf(0.6); ctx.restore(); }
-    function drawMiniPowerup(p){ const {x,y,w,h}=p; ctx.save(); ctx.translate(x,y); ctx.fillStyle='#374151'; roundRect(0,h*0.25,w*0.8,h*0.6,6,true); ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(w*0.6,h*0.45,2.5,0,Math.PI*2); ctx.fill(); ctx.restore(); }
-    function drawFollower(x,y,scale=0.55){ ctx.save(); ctx.translate(x,y); const w=70*scale,h=70*scale; ctx.fillStyle='#4b5563'; roundRect(-w*0.35,h*0.05,w*0.7,h*0.55,8,true); ctx.fillStyle='#4b5563'; roundRect(w*0.05,-h*0.15,w*0.45,h*0.35,8,true); ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(w*0.38,-h*0.02,3.2,0,Math.PI*2); ctx.fill(); ctx.fillStyle='#111'; ctx.beginPath(); ctx.arc(w*0.38,-h*0.02,1.5,0,Math.PI*2); ctx.fill(); ctx.restore(); }
+    // --- Followers now use the same skin colors as player ---
+    function drawFollower(x,y,scale, skin){
+      ctx.save(); ctx.translate(x,y); const w=70*(scale||0.55),h=70*(scale||0.55);
+      const body=skin?.body || '#4b5563'; const head=skin?.head || body; const eye=skin?.eye || '#111';
+      ctx.fillStyle=body; roundRect(-w*0.35,h*0.05,w*0.7,h*0.55,8,true);
+      ctx.fillStyle=head; roundRect(w*0.05,-h*0.15,w*0.45,h*0.35,8,true);
+      ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(w*0.38,-h*0.02,3.2,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle=eye; ctx.beginPath(); ctx.arc(w*0.38,-h*0.02,1.5,0,Math.PI*2); ctx.fill();
+      ctx.restore();
+    }
     function drawFollowers(){
-      // 與本體同步姿勢，並放大與本體/彼此的距離（V4.9 調整）
+      const skin = getSkinForTier(currentSkinTier());
       const baseY = dino.y + (dino.h - 40);
-      const baseOffset = 50;  // 與本體的起始距離（原 26*1 -> 50）
-      const stepOffset = 38;  // 每隻之間的距離（原 26 -> 38）
+      const baseOffset = 50;  // 與本體的起始距離
+      const stepOffset = 38;  // 每隻之間的距離
       for(let i=0;i<state.littles;i++){
         const offset = baseOffset + stepOffset * i;   
         const phase  = i*0.7;              
         const bob    = Math.sin(state.time*10 + phase) * 1.2; 
         const fy     = baseY + bob;
-        drawFollower(dino.x - offset, fy);
+        drawFollower(dino.x - offset, fy, 0.55, skin);
       }
     }
+
+    function drawCactus(ob){ const {x,y,w,h}=ob; ctx.save(); ctx.translate(x,y+h); ctx.fillStyle='#16a34a'; roundRect(-w*0.45,-h, w*0.9, h, 6, true); roundRect(-w*0.95,-h*0.58, w*0.35, h*0.44, 6, true); roundRect( w*0.60,-h*0.46, w*0.35, h*0.36, 6, true); ctx.restore(); }
+    function drawJet(ob){ const {x,y,w,h}=ob; ctx.save(); ctx.translate(x,y); ctx.fillStyle=state.night? '#60a5fa' : '#111827'; ctx.beginPath(); ctx.moveTo(0,h*0.5); ctx.lineTo(w*0.55,h*0.5); ctx.lineTo(w*0.85,h*0.35); ctx.lineTo(w,h*0.5); ctx.lineTo(w*0.85,h*0.65); ctx.lineTo(w*0.55,h*0.5); ctx.closePath(); ctx.fill(); ctx.beginPath(); ctx.moveTo(w*0.22,0); ctx.lineTo(w*0.52,h*0.5); ctx.lineTo(w*0.22,h); ctx.closePath(); ctx.fill(); ctx.beginPath(); ctx.moveTo(w*0.12,h*0.2); ctx.lineTo(w*0.2,h*0.5); ctx.lineTo(w*0.12,h*0.8); ctx.closePath(); ctx.fill(); const flame=6+6*Math.sin(state.time*20); ctx.fillStyle=state.night? '#fbbf24' : '#f59e0b'; ctx.beginPath(); ctx.moveTo(-flame,h*0.5); ctx.lineTo(0,h*0.4); ctx.lineTo(0,h*0.6); ctx.closePath(); ctx.fill(); ctx.restore(); }
+    function drawDragon(ob){ const {x,y,w,h}=ob; ctx.save(); ctx.translate(x,y); ctx.fillStyle = '#f59e0b'; roundRect(w*0.05,h*0.15,w*0.70,h*0.55,16,true); ctx.fillStyle = '#fde68a'; roundRect(w*0.16,h*0.36,w*0.46,h*0.28,10,true); ctx.fillStyle = '#f59e0b'; roundRect(-w*0.08,h*0.18,w*0.34,h*0.30,14,true); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(w*0.12,h*0.30,5,0,Math.PI*2); ctx.fill(); ctx.fillStyle='#111'; ctx.beginPath(); ctx.arc(w*0.12,h*0.30,2.4,0,Math.PI*2); ctx.fill(); ctx.fillStyle = state.night? '#93c5fd' : '#10b981'; ctx.beginPath(); ctx.moveTo(w*0.38,h*0.18); ctx.quadraticCurveTo(w*0.78,0,w*0.98,h*0.18); ctx.quadraticCurveTo(w*0.72,h*0.34,w*0.38,h*0.22); ctx.closePath(); ctx.fill(); ctx.fillStyle = '#f59e0b'; ctx.beginPath(); ctx.moveTo(w*0.70,h*0.58); ctx.quadraticCurveTo(w*0.92,h*0.70,w*1.02,h*0.58); ctx.lineTo(w*0.86,h*0.52); ctx.closePath(); ctx.fill(); ctx.restore(); }
+    function drawPalm(ob){
+      const {x,y,w,h}=ob; // simple, readable palm tree
+      ctx.save();
+      ctx.translate(x + w*0.5, y + h);
+      // trunk
+      ctx.fillStyle = '#8b5a2b';
+      roundRect(-w*0.25, -h, w*0.5, h, 6, true);
+      // leaves
+      ctx.translate(0, -h);
+      ctx.rotate(Math.sin(state.palmWaves + x*0.01) * 0.06);
+      const leaf = (ang)=>{
+        ctx.save();
+        ctx.rotate(ang);
+        ctx.fillStyle = '#10b981';
+        ctx.beginPath();
+        ctx.moveTo(0,0);
+        ctx.quadraticCurveTo(32,-6,64,0);
+        ctx.quadraticCurveTo(32,6,0,0);
+        ctx.fill();
+        ctx.restore();
+      };
+      leaf(-0.6); leaf(0); leaf(0.6);
+      ctx.restore();
+    }
+    function drawMiniPowerup(p){ const {x,y,w,h}=p; ctx.save(); ctx.translate(x,y); ctx.fillStyle='#374151'; roundRect(0,h*0.25,w*0.8,h*0.6,6,true); ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(w*0.6,h*0.45,2.5,0,Math.PI*2); ctx.fill(); ctx.restore(); }
     function drawBullet(b){ ctx.save(); ctx.translate(b.x,b.y); ctx.fillStyle=state.night? '#e5e7eb' : '#ef4444'; ctx.fillRect(0,0,b.w,b.h); ctx.restore(); }
     function drawChest(p){ const {x,y,w,h}=p; ctx.save(); ctx.translate(x,y); ctx.fillStyle='#f59e0b'; roundRect(0,0,w,h,4,true); ctx.fillStyle='#8b5a2b'; ctx.fillRect(0,h*0.5,w,h*0.18); ctx.fillStyle='#fff'; ctx.fillRect(w*0.48,h*0.2,w*0.04,h*0.6); ctx.fillRect(w*0.3,h*0.45,w*0.4,h*0.08); ctx.restore(); }
     function drawStar(p){ const {x,y,w,h,spin}=p; const r=Math.min(w,h)/2; ctx.save(); ctx.translate(x+w/2,y+h/2); ctx.rotate(spin); const spikes=5; let rot=Math.PI/2*3; const step=Math.PI/spikes; ctx.beginPath(); ctx.moveTo(0,-r); for(let i=0;i<spikes;i++){ ctx.lineTo(Math.cos(rot)*r,Math.sin(rot)*r); rot+=step; ctx.lineTo(Math.cos(rot)*r*0.5,Math.sin(rot)*r*0.5); rot+=step; } ctx.lineTo(0,-r); ctx.closePath(); ctx.fillStyle='#facc15'; ctx.fill(); ctx.restore(); }
@@ -477,47 +469,30 @@
     function drawParticles(){ for(const p of state.particles){ const t=p.age/p.life; const alpha=Math.max(0,1-t); ctx.save(); ctx.globalAlpha=alpha; const col=state.night? p.colorNight : p.colorDay; ctx.fillStyle=col; ctx.shadowColor=col; ctx.shadowBlur=8; ctx.fillRect(p.x,p.y,p.size,p.size*0.75); ctx.restore(); } }
     function draw(dt){ ctx.clearRect(0,0,canvas.width,canvas.height); for(const c of state.clouds) drawCloud(c); drawGround(); for(const ob of state.obstacles) drawOb(ob); for(const b of state.bullets) drawBullet(b); for(const p of state.powerups){ if(p.type==='chest') drawChest(p); else if(p.type==='star') drawStar(p); else if(p.type==='gun') drawGun(p); else drawMiniPowerup(p); } for(const pb of state.pBullets) drawPlayerBullet(pb); drawParticles(); drawFollowers(); drawDino(); }
 
-    /* =============================
-       自動化測試（console）
-       ============================= */
     function runSelfTests(){
       const tests=[]; const assert=(n,c)=>tests.push({n,pass:!!c});
       assert('start() exists', typeof start==='function');
       assert('restart() exists', typeof restart==='function');
       assert('attemptQuickRestart() exists', typeof attemptQuickRestart==='function');
 
-      try{ 
-        state.obstacles.length=0; state.pBullets.length=0; const h=80,w=22; const ox=dino.x+120; const oy=groundY()-h; state.obstacles.push({type:'cactus',x:ox,y:oy,w,h}); state.pBullets.push({x:ox+2,y:oy+h*0.5,w:12,h:3,v:0}); const b0=state.obstacles.length; update(0); const b1=state.obstacles.length; assert('MG bullet destroys cactus', b1===b0-1);
-      }catch(e){ assert('MG bullet destroys cactus (no error)', false); }
+      try{ state.obstacles.length=0; state.pBullets.length=0; const h=80,w=22; const ox=dino.x+120; const oy=groundY()-h; state.obstacles.push({type:'cactus',x:ox,y:oy,w,h}); state.pBullets.push({x:ox+2,y:oy+h*0.5,w:12,h:3,v:0}); const b0=state.obstacles.length; update(0); const b1=state.obstacles.length; assert('MG bullet destroys cactus', b1===b0-1); }catch(e){ assert('MG bullet destroys cactus (no error)', false); }
 
-      try{ 
-        state.obstacles.length=0; state.pBullets.length=0; const w=110,h=68; const ox=dino.x+140; const oy=groundY()-200; state.obstacles.push({type:'dragon',x:ox,y:oy,w,h,y0:oy,amp:80,freq:1.6,phase:0}); state.pBullets.push({x:ox+5,y:oy+h*0.5,w:12,h:3,v:0}); const a0=state.obstacles.length; update(0); const a1=state.obstacles.length; assert('MG bullet destroys dragon', a1===a0-1);
-      }catch(e){ assert('MG bullet destroys dragon (no error)', false); }
+      try{ state.obstacles.length=0; state.pBullets.length=0; const w=110,h=68; const ox=dino.x+140; const oy=groundY()-200; state.obstacles.push({type:'dragon',x:ox,y:oy,w,h,y0:oy,amp:80,freq:1.6,phase:0}); state.pBullets.push({x:ox+5,y:oy+h*0.5,w:12,h:3,v:0}); const a0=state.obstacles.length; update(0); const a1=state.obstacles.length; assert('MG bullet destroys dragon', a1===a0-1); }catch(e){ assert('MG bullet destroys dragon (no error)', false); }
 
-      try{ 
-        state.obstacles.length=0; state.bullets.length=0; const h=28,w=90; const yBase=groundY()-180; state.obstacles.push({type:'jet',x:dino.x+260,y:yBase,w,h,shootTimer:0.02,fired:false,y0:yBase,amp:20,freq:1,phase:0}); for(let i=0;i<30;i++) update(0.016); const count=state.bullets.length; for(let i=0;i<60;i++) update(0.016); assert('Jet fires once', count===1 && state.bullets.length===1);
-      }catch(e){ assert('Jet fires once (no error)', false); }
+      try{ state.obstacles.length=0; state.bullets.length=0; const h=28,w=90; const yBase=groundY()-180; state.obstacles.push({type:'jet',x:dino.x+260,y:yBase,w,h,shootTimer:0.02,fired:false,y0:yBase,amp:20,freq:1,phase:0}); for(let i=0;i<30;i++) update(0.016); const count=state.bullets.length; for(let i=0;i<60;i++) update(0.016); assert('Jet fires once', count===1 && state.bullets.length===1); }catch(e){ assert('Jet fires once (no error)', false); }
 
-      try{ 
-        state.littles=0; state.powerups=[{type:'mini',x:dino.x,y:dino.y,w:20,h:20}]; update(0); const hpAfter=1+state.littles; assert('Pickup mini increases HP', hpAfter>=2);
-      }catch(e){ assert('Pickup mini increases HP (no error)', false); }
+      try{ state.littles=0; state.powerups=[{type:'mini',x:dino.x,y:dino.y,w:20,h:20}]; update(0); const hpAfter=1+state.littles; assert('Pickup mini increases HP', hpAfter>=2); }catch(e){ assert('Pickup mini increases HP (no error)', false); }
 
-      try{ 
-        reset(); state.littles=2; state.obstacles=[{type:'cactus',x:dino.x+10,y:groundY()-60,w:22,h:60}]; update(0.016); const alive=!state.dead; const remaining=state.littles; assert('Hit reduces HP if littles>0', alive && remaining===1);
-      }catch(e){ assert('Hit reduces HP if littles>0 (no error)', false); }
+      try{ reset(); state.littles=2; state.obstacles=[{type:'cactus',x:dino.x+10,y:groundY()-60,w:22,h:60}]; update(0.016); const alive=!state.dead; const remaining=state.littles; assert('Hit reduces HP if littles>0', alive && remaining===1); }catch(e){ assert('Hit reduces HP if littles>0 (no error)', false); }
 
-      try{ 
-        state.score=1100; const before=state.night; update(0); assert('Night mode toggles after 1000', state.night===true || before!==state.night);
-      }catch(e){ assert('Night mode toggles after 1000 (no error)', false); }
+      try{ state.score=1100; const before=state.night; update(0); assert('Night mode toggles after 1000', state.night===true || before!==state.night); }catch(e){ assert('Night mode toggles after 1000 (no error)', false); }
 
-      try{ 
-        reset(); state.powerups=[{type:'star',x:dino.x,y:dino.y,w:20,h:20,spin:0}]; const t0=state.time; update(0); assert('Pickup star sets invincibleUntil', state.invincibleUntil>t0);
-      }catch(e){ assert('Pickup star sets invincibleUntil (no error)', false); }
+      try{ reset(); state.powerups=[{type:'star',x:dino.x,y:dino.y,w:20,h:20,spin:0}]; const t0=state.time; update(0); assert('Pickup star sets invincibleUntil', state.invincibleUntil>t0); }catch(e){ assert('Pickup star sets invincibleUntil (no error)', false); }
 
-      // 新增：機關槍（mgOn）自動發射測試
-      try{
-        reset(); state.mgUntil = state.time + 0.5; state.mgFireRate = 10; state.mgFireTimer = 0; const before = state.pBullets.length; update(0.016); const after = state.pBullets.length; assert('MG spawns bullets when active', after>before);
-      }catch(e){ assert('MG spawns bullets when active (no error)', false); }
+      try{ reset(); state.mgUntil = state.time + 0.5; state.mgFireRate = 10; state.mgFireTimer = 0; const before = state.pBullets.length; update(0.016); const after = state.pBullets.length; assert('MG spawns bullets when active', after>before); }catch(e){ assert('MG spawns bullets when active (no error)', false); }
+
+      // 新增：Palm 必須存在且可安全繪製
+      try{ reset(); const h=80,w=40; const oy=groundY()-h; state.obstacles=[{type:'palm',x:dino.x+120,y:oy,w,h}]; const okBefore=typeof drawPalm==='function'; let threw=false; try{ draw(0); }catch(e){ threw=true; } assert('drawPalm is defined', okBefore); assert('drawOb draws palm without throwing', okBefore && !threw); }catch(e){ assert('Palm draw tests (no error)', false); }
 
       console.group('%cSelf Tests','color:#10b981;font-weight:700');
       tests.forEach(t=>console[t.pass?'log':'error'](`${t.pass?'✅':'❌'} ${t.n}`));
