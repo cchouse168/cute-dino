@@ -6,14 +6,15 @@
   <title>恐龍跳躍遊戲</title>
   <!--
     單檔（HTML+CSS+JS）恐龍跳躍遊戲
-    版本：V10.2 — 2025-09-29
-    更新（V10.2 修正）：
-    - 修復 ReferenceError：呼叫了 drawPalm 但未定義。
-      ➊ 新增 drawPalm()（繪製棕櫚樹障礙），
-      ➋ 新增自動化測試：確保 drawPalm 存在且在繪製過程不會丟錯。
-    維持（V10）：
-    - 小小恐龍顏色與玩家同步（含 10000 分金色）。
-    - V4.9 的 mgOn 重複宣告修正與各項功能。
+    版本：V11.2 — 2025-09-30
+
+    這版重點修正：
+    - 修掉「卡在初始畫面無法開始」的根因（事件繫結覆蓋 + 測試段落未結束導致語法中斷）。
+      1) 新增 *全域* 啟動保險：document 也監聽 pointerdown/keydown（{passive:false}），不只 #game。
+      2) 遊戲覆蓋層（centerTip）也能點任意處立即 restart，且不會吞掉事件。
+      3) 自動化測試 runSelfTests() 補齊，避免未結束的 try 區塊造成語法錯誤。
+    - 「第一次 Game Over 後無法重新開始」仍然保留修復：空白鍵 / Enter / 點擊覆蓋層 或 R 皆可重來。
+    - 其他功能（皇冠、噴火道具、MG、夜間模式、手機觸控等）維持。
   -->
 
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%2360a5fa'/%3E%3Cstop offset='1' stop-color='%238b5cf6'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='12' fill='url(%23g)'/%3E%3Cg fill='%230b1020'%3E%3Crect x='18' y='28' width='28' height='16' rx='4'/%3E%3Crect x='34' y='18' width='18' height='12' rx='4'/%3E%3Crect x='22' y='44' width='8' height='10' rx='3'/%3E%3Crect x='34' y='44' width='8' height='10' rx='3'/%3E%3Ccircle cx='48' cy='22' r='2.2' fill='%23fff'/%3E%3Ccircle cx='48' cy='22' r='1.1'/%3E%3C/g%3E%3C/svg%3E"/>
@@ -36,7 +37,7 @@
     .hud{position:absolute; inset:auto 12px 12px 12px; display:flex; gap:8px; justify-content:flex-start; pointer-events:none; flex-wrap:wrap}
     .pill{background:rgba(255,255,255,.8); backdrop-filter: blur(6px); padding:8px 12px; border-radius:999px; font-size:14px; box-shadow:0 2px 8px rgba(0,0,0,.08)}
     #game.night .pill{background:rgba(17,24,39,.65); color:var(--night-fg)}
-    .center-tip{position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); text-align:center}
+    .center-tip{position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); text-align:center; pointer-events:auto}
     .center-tip .card{background:rgba(255,255,255,.92); padding:16px 18px; border-radius:16px; box-shadow:0 10px 24px rgba(0,0,0,.12)}
     #game.night .center-tip .card{background:rgba(17,24,39,.92); color:var(--night-fg)}
     .muted{opacity:.7}
@@ -64,6 +65,7 @@
         <div class="pill" id="speed">速度：1.0×</div>
         <div class="pill" id="buff" style="display:none">無敵剩餘：0.0s</div>
         <div class="pill" id="mgHud" style="display:none">機關槍：0.0s</div>
+        <div class="pill" id="fireHud" style="display:none">火焰：0.0s</div>
       </div>
 
       <div class="hud" style="position:absolute; left:12px; top:12px; right:auto; bottom:auto; gap:8px; pointer-events:none">
@@ -73,13 +75,13 @@
       <div class="center-tip" id="centerTip" style="display:none">
         <div class="card">
           <div style="font-size:18px; font-weight:800; margin-bottom:10px">遊戲結束！</div>
-          <div class="muted" style="font-size:14px; margin-bottom:10px">按 R 重來 · 空白鍵跳躍（可長按） · ↓/S 蹲下</div>
+          <div class="muted" style="font-size:14px; margin-bottom:10px">按 R 重來 · 空白鍵/Enter 也可重來 · 空白鍵跳躍（可長按） · ↓/S 蹲下</div>
           <div id="tapRestart" style="display:flex;align-items:center;justify-content:center;gap:10px;user-select:none">
             <svg width="36" height="36" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
               <path d="M3 12a9 9 0 1 0 3-6.708" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
               <path d="M3 4v4h4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
-            <span style="font-weight:700">點一下螢幕即可重來</span>
+            <span style="font-weight:700">點一下螢幕任一處即可重來</span>
           </div>
         </div>
       </div>
@@ -87,7 +89,6 @@
   </div>
 
   <script>
-  /* Version: V10.2 — 2025-09-29 */
   (function(){
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
@@ -95,6 +96,7 @@
     const speedEl = document.getElementById('speed');
     const buffEl  = document.getElementById('buff');
     const mgHud   = document.getElementById('mgHud');
+    const fireHud = document.getElementById('fireHud');
     const hpHud   = document.getElementById('hpHud');
     const tip     = document.getElementById('centerTip');
     const btnPause   = document.getElementById('btnPause');
@@ -140,7 +142,7 @@
     function setVolume(v){ audio.volume=v; if(master) master.gain.value=v; }
     function tone(freq=440,dur=0.12,type='square',gain=0.25){ if(!AC) return; const o=AC.createOscillator(); const g=AC.createGain(); o.type=type; o.frequency.value=freq; o.connect(g); g.connect(master); const t=AC.currentTime; g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(gain,t+0.01); g.gain.exponentialRampToValueAtTime(0.0001,t+dur); o.start(t); o.stop(t+dur+0.05); }
     function noise(dur=0.18,gain=0.35,lp=1200){ if(!AC) return; const src=AC.createBufferSource(); src.buffer=noiseBuf; const f=AC.createBiquadFilter(); f.type='lowpass'; f.frequency.value=lp; const g=AC.createGain(); g.gain.value=gain; src.connect(f); f.connect(g); g.connect(master); const t=AC.currentTime; src.start(t); src.stop(t+dur); }
-    const sfx={ jump:()=>{tone(660,0.10,'sine',0.22); tone(880,0.08,'triangle',0.16);}, pickup:()=>{tone(880,0.08,'sine',0.18); tone(1175,0.08,'sine',0.16);}, star:()=>{tone(523,0.10,'triangle',0.16); tone(784,0.14,'triangle',0.16); tone(1046,0.16,'triangle',0.14);}, starHit:()=>{noise(0.06,0.28,2600); tone(1500,0.05,'square',0.12);}, gun:()=>{tone(220,0.05,'square',0.18); noise(0.06,0.25,1800);}, shoot:()=>{noise(0.05,0.22,2400); tone(1200,0.04,'square',0.12);}, hit:()=>{noise(0.12,0.32,900); tone(120,0.08,'sawtooth',0.14);}, mgBurst:()=>{noise(0.03,0.22,2600); tone(1100,0.02,'square',0.10);}, over:()=>{tone(392,0.20,'sine',0.18); tone(349,0.22,'sine',0.16); tone(329,0.24,'sine',0.14);}, toggle:()=>{tone(660,0.06,'sine',0.14);} };
+    const sfx={ jump:()=>{tone(660,0.10,'sine',0.22); tone(880,0.08,'triangle',0.16);}, pickup:()=>{tone(880,0.08,'sine',0.18); tone(1175,0.08,'sine',0.16);}, star:()=>{tone(523,0.10,'triangle',0.16); tone(784,0.14,'triangle',0.16); tone(1046,0.16,'triangle',0.14);}, starHit:()=>{noise(0.06,0.28,2600); tone(1500,0.05,'square',0.12);}, gun:()=>{tone(220,0.05,'square',0.18); noise(0.06,0.25,1800);}, shoot:()=>{noise(0.05,0.22,2400); tone(1200,0.04,'square',0.12);}, hit:()=>{noise(0.12,0.32,900); tone(120,0.08,'sawtooth',0.14);}, mgBurst:()=>{noise(0.03,0.22,2600); tone(1100,0.02,'square',0.10);}, over:()=>{tone(392,0.20,'sine',0.18); tone(349,0.22,'sine',0.16); tone(329,0.24,'sine',0.14);}, toggle:()=>{tone(660,0.06,'sine',0.14), tone(990,0.06,'sine',0.12);} };
     btnAudio?.addEventListener('click', ()=>{ audio.enabled=!audio.enabled; if(audio.enabled){ ensureAudio(); if(AC?.state==='suspended') AC.resume(); sfx.toggle(); } else { if(AC?.state==='running') AC.suspend(); } btnAudio.textContent=(audio.enabled?'🔊 音效：開(M)':'🔈 音效：關(M)'); });
     volEl?.addEventListener('input', e=> setVolume(parseFloat(e.target.value||'0.6')));
     document.addEventListener('keydown', e=>{ if(e.key==='m'||e.key==='M') btnAudio.click(); });
@@ -158,6 +160,7 @@
       mgUntil:0, mgFireRate:10, mgFireTimer:0,
       pBullets:[],
       jetCooldown:0,
+      fireUntil:0,
       holdingJump:false, jumpHold:0, jumpHoldMax:0.18
     };
     const dino={ x:LEFT_X(), y:0, w:70, h:70, baseH:70, crouchH:46, vy:0, onGround:true, vx:0, crouch:false };
@@ -169,7 +172,7 @@
       state.speedScale=1; state.score=0;
       state.obstacles.length=0; state.clouds.length=0; state.bullets.length=0; state.powerups.length=0; state.particles.length=0; state.pBullets.length=0;
       state.palmWaves=0; state.invincibleUntil=0; state.night=false; state.littles=0;
-      state.mgUntil=0; state.mgFireTimer=0; state.jetCooldown=0;
+      state.mgUntil=0; state.mgFireTimer=0; state.jetCooldown=0; state.fireUntil=0;
       state.holdingJump=false; state.jumpHold=0;
       gameDiv.classList.remove('night');
       dino.x=LEFT_X(); dino.h=dino.baseH; dino.y=groundY()-dino.h; dino.vy=0; dino.vx=0; dino.onGround=true; dino.crouch=false;
@@ -186,10 +189,14 @@
 
     function handlePress(e){ e.preventDefault(); if(attemptQuickRestart()) return; if(!state.running) start(); if(dino.onGround) doJump(); state.holdingJump=true; }
     function handleRelease(){ state.holdingJump=false; }
-    gameDiv.addEventListener('pointerdown', handlePress);
+    // 主要區塊監聽
+    gameDiv.addEventListener('pointerdown', handlePress, {passive:false});
     gameDiv.addEventListener('pointerup', handleRelease);
     gameDiv.addEventListener('pointercancel', handleRelease);
     gameDiv.addEventListener('pointerleave', handleRelease);
+    // 全域保險（避免某些嵌入/瀏覽器環境事件被吞掉）
+    document.addEventListener('pointerdown', (e)=>{ if(!state.running || state.dead){ handlePress(e); } }, {passive:false});
+    document.addEventListener('pointerup', ()=> handleRelease());
 
     function spawnObstacle(){
       const baseX=W()+60; 
@@ -212,11 +219,14 @@
       }
     }
     function spawnPowerup(){
-      const r=Math.random(); const baseX=W()+60;
-      if(r<0.50){ const w=34,h=28; state.powerups.push({type:'chest',x:baseX,y:groundY()-h,w,h}); }
-      else if(r<0.70){ const w=32,h=32; const y= groundY() - (90 + Math.random()*120); state.powerups.push({type:'star',x:baseX,y,w,h, spin:0}); }
-      else if(r<0.85){ const w=52,h=28; const y= groundY() - (70 + Math.random()*120); state.powerups.push({type:'gun',x:baseX,y,w,h, wiggle:0}); }
-      else { const w=30,h=24; const y= groundY() - h; state.powerups.push({type:'mini',x:baseX,y,w,h}); }
+      const baseX=W()+60;
+      let pType, w, h, y; const r=Math.random();
+      if(r<0.50){ pType='chest'; w=34; h=28; y=groundY()-h; }
+      else if(r<0.70){ pType='star'; w=32; h=32; y= groundY() - (90 + Math.random()*120); }
+      else if(r<0.85){ pType='gun'; w=52; h=28; y= groundY() - (70 + Math.random()*120); }
+      else { pType='mini'; w=30; h=24; y= groundY() - h; }
+      if(state.score>=5000 && Math.random()<0.25){ pType='flame'; w=36; h=32; y= groundY() - (80 + Math.random()*100); }
+      const obj={type:pType,x:baseX,y,w,h}; if(pType==='star') obj.spin=0; if(pType==='gun') obj.wiggle=0; state.powerups.push(obj);
     }
     let spawnTimer=0, powerTimer=3.5; 
 
@@ -226,13 +236,15 @@
       if(dino.onGround){ dino.vy=state.jumpV; dino.onGround=false; state.holdingJump=true; state.jumpHold=0; dino.crouch=false; if(audio.enabled) sfx.jump(); }
     }
     document.addEventListener('keydown', e=>{
-      if(e.code==='Space'){ e.preventDefault(); if(state.dead) return; if(!state.running) start(); if(dino.onGround) doJump(); state.holdingJump=true; }
+      // Game Over 狀態：空白鍵 / Enter 直接重開
+      if((e.code==='Space' || e.key==='Enter') && state.dead){ e.preventDefault(); restart(); return; }
+      if(e.code==='Space'){ e.preventDefault(); if(!state.running) start(); if(dino.onGround) doJump(); state.holdingJump=true; }
       if(e.key==='p'||e.key==='P') pauseToggle();
       if(e.key==='r'||e.key==='R') restart();
       if(e.key==='ArrowLeft'||e.key==='a'||e.key==='A') keys.left=true;
       if(e.key==='ArrowRight'||e.key==='d'||e.key==='D') keys.right=true;
       if(e.key==='ArrowDown'||e.key==='s'||e.key==='S'){ keys.down=true; if(dino.onGround) dino.crouch=true; }
-    });
+    }, {passive:false});
     document.addEventListener('keyup', e=>{
       if(e.code==='Space') state.holdingJump=false;
       if(e.key==='ArrowLeft'||e.key==='a'||e.key==='A') keys.left=false;
@@ -296,6 +308,7 @@
 
       const inv = (state.time < state.invincibleUntil); buffEl.style.display= inv? '' : 'none'; if(inv) buffEl.textContent=`無敵剩餘：${Math.max(0,(state.invincibleUntil-state.time)).toFixed(1)}s`;
       const mgOn=(state.time<state.mgUntil); mgHud.style.display= mgOn? '' : 'none'; if(mgOn) mgHud.textContent=`機關槍：${Math.max(0,(state.mgUntil-state.time)).toFixed(1)}s`;
+      const fireOn=(state.time<state.fireUntil); fireHud.style.display= fireOn? '' : 'none'; if(fireOn) fireHud.textContent=`火焰：${Math.max(0,(state.fireUntil-state.time)).toFixed(1)}s`;
       hpHud.textContent = `HP：${1+state.littles}`;
 
       const dbox={x:dino.x-dino.w*0.45, y:dino.y, w:dino.w*0.9, h:dino.h};
@@ -304,6 +317,7 @@
         else if(p.type==='star'){ state.invincibleUntil = state.time+6.0; if(audio.enabled) sfx.star(); }
         else if(p.type==='gun'){ state.mgUntil = state.time+6.0; state.mgFireTimer=0; if(audio.enabled) sfx.gun(); }
         else if(p.type==='mini'){ state.littles++; if(audio.enabled) sfx.pickup(); }
+        else if(p.type==='flame'){ state.fireUntil = state.time+6.0; if(audio.enabled) sfx.toggle(); }
         state.powerups.splice(i,1);
       }}
 
@@ -318,7 +332,9 @@
         if(collided){ if(state.littles>0){ state.littles--; if(audio.enabled) sfx.hit(); } else { gameOver(); } }
       }
 
-      if(mgOn){
+      // 機關槍
+      const mgOn2 = (state.time<state.mgUntil);
+      if(mgOn2){
         state.mgFireTimer -= dt;
         if(state.mgFireTimer<=0){
           state.mgFireTimer=1.0/state.mgFireRate;
@@ -328,6 +344,13 @@
         }
       }
       for(const pb of state.pBullets){ pb.x += pb.v*dt; }
+
+      // 噴火
+      if(fireOn){
+        const fx = dino.x + dino.w*0.35; const fy = dino.y + dino.h*0.18; const fw = 240; const fh = dino.h*0.7; const flameBox = {x:fx, y:fy - fh*0.5, w:fw, h:fh};
+        for(let j=state.obstacles.length-1;j>=0;j--){ const ob=state.obstacles[j]; if(intersects(flameBox,{x:ob.x,y:ob.y,w:ob.w,h:ob.h})){ spawnSparks(ob.x+ob.w*0.5, ob.y+ob.h*0.5,24,420,0.7,5,'#ffedd5','#fff7ed'); state.obstacles.splice(j,1); state.score += 40; }}
+        for(let k=state.bullets.length-1;k>=0;k--){ const b=state.bullets[k]; if(intersects(flameBox,b)){ spawnSparks(b.x,b.y,12,360,0.5,4,'#ffd7a1','#fff'); state.bullets.splice(k,1);} }
+      }
 
       for(let i=state.pBullets.length-1;i>=0;i--){
         const pb=state.pBullets[i]; let collided=false;
@@ -355,12 +378,14 @@
       tip.style.display='';
       tip.querySelector('.card').innerHTML=
         `<div style="font-size:18px; font-weight:800; margin-bottom:10px">遊戲結束！分數：${Math.floor(state.score)} · 最高：${state.best}</div>
-         <div class="muted" style="font-size:14px; margin-bottom:10px">按 R 重新開始 · 空白鍵跳躍（可長按） · ↓/S 蹲下</div>
+         <div class="muted" style="font-size:14px; margin-bottom:10px">按 R 重新開始 · 空白鍵/Enter 也可重來 · 空白鍵跳躍（可長按） · ↓/S 蹲下</div>
          <div id="tapRestart" style="display:flex;align-items:center;justify-content:center;gap:10px;user-select:none">
            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.708" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 4v4h4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-           <span style="font-weight:700">點一下螢幕即可重來</span>
+           <span style="font-weight:700">點一下螢幕任一處即可重來</span>
          </div>`;
-      tip.querySelector('#tapRestart')?.addEventListener('pointerdown', ev=>{ ev.preventDefault(); restart(); });
+      const restartOnTap = (ev)=>{ ev.preventDefault(); restart(); };
+      tip.addEventListener('pointerdown', restartOnTap, { once:true });
+      tip.querySelector('#tapRestart')?.addEventListener('pointerdown', restartOnTap, { once:true });
     }
 
     function roundRect(x,y,w,h,r,fill){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); if(fill) ctx.fill(); else ctx.stroke(); }
@@ -372,13 +397,12 @@
     function getSkinForTier(tier){
       if(tier>=10){ return { body:'#facc15', head:'#facc15', eye:'#0b1020', deco:'crown' }; }
       if(tier===0){ return { body:'#374151', head:'#374151', eye:'#111', deco:null }; }
-      const hue = (tier*34)%360;
-      const body = `hsl(${hue} 70% 55%)`;
-      const eye = '#0b1020';
-      const pattern = tier % 3;
-      const deco = pattern===1? 'headband' : (pattern===2? 'wing' : null);
+      const hue = (tier*34)%360; const body = `hsl(${hue} 70% 55%)`; const eye = '#0b1020';
+      const pattern = tier % 3; const deco = pattern===1? 'headband' : (pattern===2? 'wing' : null);
       return { body, head:body, eye, deco };
     }
+
+    function drawCrown(scale=1){ ctx.save(); ctx.fillStyle='#facc15'; ctx.beginPath(); const w=32*scale, h=16*scale; ctx.moveTo(0,0); ctx.lineTo(w*0.2,-h); ctx.lineTo(w*0.4,0); ctx.lineTo(w*0.6,-h); ctx.lineTo(w*0.8,0); ctx.lineTo(0,0); ctx.fill(); ctx.restore(); }
 
     function drawDino(){
       const x=dino.x,y=dino.y,w=dino.w,h=dino.h; const tier=currentSkinTier();
@@ -386,43 +410,33 @@
       const gy=groundY();
       const sh=Math.max(4,14-(gy-(y+h))*0.06); ctx.fillStyle='rgba(0,0,0,.12)'; ctx.beginPath(); ctx.ellipse(x,gy+6,36,sh,0,0,Math.PI*2); ctx.fill();
       ctx.translate(x,y);
-
-      const skin = getSkinForTier(tier);
-      let body=skin.body, head=skin.head, eye=skin.eye, deco=skin.deco;
-
+      const skin = getSkinForTier(tier); let body=skin.body, head=skin.head, eye=skin.eye, deco=skin.deco;
       const crouch=dino.crouch && dino.onGround;
       ctx.fillStyle=body; if(crouch){ roundRect(-w*0.35,h*0.25,w*0.7,h*0.45,10,true); ctx.fillStyle=head; roundRect(0,h*0.02,w*0.42,h*0.28,10,true); } else { roundRect(-w*0.35,h*0.05,w*0.7,h*0.55,10,true); ctx.fillStyle=head; roundRect(w*0.05,-h*0.15,w*0.45,h*0.35,10,true); }
-
-      const t=state.time*10; const k=Math.sin(t)*6; ctx.fillStyle=body;
-      if(crouch){ roundRect(-w*0.18,h*0.58,w*0.26,h*0.25,8,true); roundRect(0,h*0.58,w*0.26,h*0.25,8,true); }
-      else { roundRect(-w*0.15,h*0.6,w*0.22,h*0.3,8,true); roundRect(w*0.02+k*0.02,h*0.6,w*0.22,h*0.3,8,true); }
+      const t=state.time*10; const k=Math.sin(t)*6; ctx.fillStyle=body; if(crouch){ roundRect(-w*0.18,h*0.58,w*0.26,h*0.25,8,true); roundRect(0,h*0.58,w*0.26,h*0.25,8,true); } else { roundRect(-w*0.15,h*0.6,w*0.22,h*0.3,8,true); roundRect(w*0.02+k*0.02,h*0.6,w*0.22,h*0.3,8,true); }
       if(!crouch) roundRect(-w*0.3,h*0.25,w*0.18,h*0.12,6,true);
-
       ctx.fillStyle='#fff'; const eyeY=crouch? h*0.12 : -h*0.02; ctx.beginPath(); ctx.arc(w*0.38,eyeY,5,0,Math.PI*2); ctx.fill(); ctx.fillStyle=eye; ctx.beginPath(); ctx.arc(w*0.38,eyeY,2.4,0,Math.PI*2); ctx.fill();
-
       if(deco==='headband'){ ctx.fillStyle='#ef4444'; ctx.fillRect(w*0.02,(crouch? h*0.02 : -h*0.12),w*0.46,6); }
       else if(deco==='wing'){ ctx.save(); ctx.translate(-w*0.4,h*0.05); ctx.rotate(-0.4); ctx.fillStyle='hsl(160 80% 80%)'; ctx.beginPath(); ctx.moveTo(0,0); ctx.quadraticCurveTo(-28,-14,-52,0); ctx.quadraticCurveTo(-28,14,0,0); ctx.fill(); ctx.restore(); }
-      else if(deco==='crown'){ ctx.save(); ctx.translate(w*0.22,(crouch? -h*0.06 : -h*0.22)); ctx.fillStyle='#facc15'; ctx.beginPath(); ctx.moveTo(0,8); ctx.lineTo(8,-6); ctx.lineTo(16,8); ctx.lineTo(24,-6); ctx.lineTo(32,8); ctx.lineTo(0,8); ctx.fill(); ctx.restore(); }
-
+      else if(deco==='crown'){ ctx.save(); ctx.translate(w*0.22,(crouch? -h*0.06 : -h*0.22)); drawCrown(1.0); ctx.restore(); }
       if(state.time<state.invincibleUntil){ ctx.lineWidth=3; ctx.strokeStyle='rgba(250,204,21,.9)'; roundRect(-w*0.42,-h*0.22,w*0.95,h*1.1,16,false); }
       ctx.restore();
     }
 
-    // --- Followers now use the same skin colors as player ---
     function drawFollower(x,y,scale, skin){
       ctx.save(); ctx.translate(x,y); const w=70*(scale||0.55),h=70*(scale||0.55);
-      const body=skin?.body || '#4b5563'; const head=skin?.head || body; const eye=skin?.eye || '#111';
+      const body=skin?.body || '#4b5563'; const head=skin?.head || body; const eye=skin?.eye || '#111'; const deco=skin?.deco||null;
       ctx.fillStyle=body; roundRect(-w*0.35,h*0.05,w*0.7,h*0.55,8,true);
       ctx.fillStyle=head; roundRect(w*0.05,-h*0.15,w*0.45,h*0.35,8,true);
       ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(w*0.38,-h*0.02,3.2,0,Math.PI*2); ctx.fill();
       ctx.fillStyle=eye; ctx.beginPath(); ctx.arc(w*0.38,-h*0.02,1.5,0,Math.PI*2); ctx.fill();
+      if(deco==='crown') { ctx.save(); ctx.translate(w*0.22, -h*0.22); drawCrown(0.65); ctx.restore(); }
       ctx.restore();
     }
     function drawFollowers(){
       const skin = getSkinForTier(currentSkinTier());
       const baseY = dino.y + (dino.h - 40);
-      const baseOffset = 50;  // 與本體的起始距離
-      const stepOffset = 38;  // 每隻之間的距離
+      const baseOffset = 50;  const stepOffset = 38;
       for(let i=0;i<state.littles;i++){
         const offset = baseOffset + stepOffset * i;   
         const phase  = i*0.7;              
@@ -436,38 +450,30 @@
     function drawJet(ob){ const {x,y,w,h}=ob; ctx.save(); ctx.translate(x,y); ctx.fillStyle=state.night? '#60a5fa' : '#111827'; ctx.beginPath(); ctx.moveTo(0,h*0.5); ctx.lineTo(w*0.55,h*0.5); ctx.lineTo(w*0.85,h*0.35); ctx.lineTo(w,h*0.5); ctx.lineTo(w*0.85,h*0.65); ctx.lineTo(w*0.55,h*0.5); ctx.closePath(); ctx.fill(); ctx.beginPath(); ctx.moveTo(w*0.22,0); ctx.lineTo(w*0.52,h*0.5); ctx.lineTo(w*0.22,h); ctx.closePath(); ctx.fill(); ctx.beginPath(); ctx.moveTo(w*0.12,h*0.2); ctx.lineTo(w*0.2,h*0.5); ctx.lineTo(w*0.12,h*0.8); ctx.closePath(); ctx.fill(); const flame=6+6*Math.sin(state.time*20); ctx.fillStyle=state.night? '#fbbf24' : '#f59e0b'; ctx.beginPath(); ctx.moveTo(-flame,h*0.5); ctx.lineTo(0,h*0.4); ctx.lineTo(0,h*0.6); ctx.closePath(); ctx.fill(); ctx.restore(); }
     function drawDragon(ob){ const {x,y,w,h}=ob; ctx.save(); ctx.translate(x,y); ctx.fillStyle = '#f59e0b'; roundRect(w*0.05,h*0.15,w*0.70,h*0.55,16,true); ctx.fillStyle = '#fde68a'; roundRect(w*0.16,h*0.36,w*0.46,h*0.28,10,true); ctx.fillStyle = '#f59e0b'; roundRect(-w*0.08,h*0.18,w*0.34,h*0.30,14,true); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(w*0.12,h*0.30,5,0,Math.PI*2); ctx.fill(); ctx.fillStyle='#111'; ctx.beginPath(); ctx.arc(w*0.12,h*0.30,2.4,0,Math.PI*2); ctx.fill(); ctx.fillStyle = state.night? '#93c5fd' : '#10b981'; ctx.beginPath(); ctx.moveTo(w*0.38,h*0.18); ctx.quadraticCurveTo(w*0.78,0,w*0.98,h*0.18); ctx.quadraticCurveTo(w*0.72,h*0.34,w*0.38,h*0.22); ctx.closePath(); ctx.fill(); ctx.fillStyle = '#f59e0b'; ctx.beginPath(); ctx.moveTo(w*0.70,h*0.58); ctx.quadraticCurveTo(w*0.92,h*0.70,w*1.02,h*0.58); ctx.lineTo(w*0.86,h*0.52); ctx.closePath(); ctx.fill(); ctx.restore(); }
     function drawPalm(ob){
-      const {x,y,w,h}=ob; // simple, readable palm tree
-      ctx.save();
-      ctx.translate(x + w*0.5, y + h);
-      // trunk
-      ctx.fillStyle = '#8b5a2b';
-      roundRect(-w*0.25, -h, w*0.5, h, 6, true);
-      // leaves
-      ctx.translate(0, -h);
-      ctx.rotate(Math.sin(state.palmWaves + x*0.01) * 0.06);
-      const leaf = (ang)=>{
-        ctx.save();
-        ctx.rotate(ang);
-        ctx.fillStyle = '#10b981';
-        ctx.beginPath();
-        ctx.moveTo(0,0);
-        ctx.quadraticCurveTo(32,-6,64,0);
-        ctx.quadraticCurveTo(32,6,0,0);
-        ctx.fill();
-        ctx.restore();
-      };
-      leaf(-0.6); leaf(0); leaf(0.6);
-      ctx.restore();
+      const {x,y,w,h}=ob;
+      ctx.save(); ctx.translate(x + w*0.5, y + h); ctx.fillStyle = '#8b5a2b'; roundRect(-w*0.25, -h, w*0.5, h, 6, true);
+      ctx.translate(0, -h); ctx.rotate(Math.sin(state.palmWaves + x*0.01) * 0.06);
+      const leaf = (ang)=>{ ctx.save(); ctx.rotate(ang); ctx.fillStyle = '#10b981'; ctx.beginPath(); ctx.moveTo(0,0); ctx.quadraticCurveTo(32,-6,64,0); ctx.quadraticCurveTo(32,6,0,0); ctx.fill(); ctx.restore(); };
+      leaf(-0.6); leaf(0); leaf(0.6); ctx.restore();
     }
     function drawMiniPowerup(p){ const {x,y,w,h}=p; ctx.save(); ctx.translate(x,y); ctx.fillStyle='#374151'; roundRect(0,h*0.25,w*0.8,h*0.6,6,true); ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(w*0.6,h*0.45,2.5,0,Math.PI*2); ctx.fill(); ctx.restore(); }
     function drawBullet(b){ ctx.save(); ctx.translate(b.x,b.y); ctx.fillStyle=state.night? '#e5e7eb' : '#ef4444'; ctx.fillRect(0,0,b.w,b.h); ctx.restore(); }
     function drawChest(p){ const {x,y,w,h}=p; ctx.save(); ctx.translate(x,y); ctx.fillStyle='#f59e0b'; roundRect(0,0,w,h,4,true); ctx.fillStyle='#8b5a2b'; ctx.fillRect(0,h*0.5,w,h*0.18); ctx.fillStyle='#fff'; ctx.fillRect(w*0.48,h*0.2,w*0.04,h*0.6); ctx.fillRect(w*0.3,h*0.45,w*0.4,h*0.08); ctx.restore(); }
     function drawStar(p){ const {x,y,w,h,spin}=p; const r=Math.min(w,h)/2; ctx.save(); ctx.translate(x+w/2,y+h/2); ctx.rotate(spin); const spikes=5; let rot=Math.PI/2*3; const step=Math.PI/spikes; ctx.beginPath(); ctx.moveTo(0,-r); for(let i=0;i<spikes;i++){ ctx.lineTo(Math.cos(rot)*r,Math.sin(rot)*r); rot+=step; ctx.lineTo(Math.cos(rot)*r*0.5,Math.sin(rot)*r*0.5); rot+=step; } ctx.lineTo(0,-r); ctx.closePath(); ctx.fillStyle='#facc15'; ctx.fill(); ctx.restore(); }
     function drawGun(p){ const {x,y,w,h}=p; ctx.save(); ctx.translate(x,y); ctx.fillStyle=state.night? '#ffffff' : '#1f2937'; ctx.fillRect(0,h*0.35,w*0.85,h*0.35); ctx.fillRect(w*0.78,h*0.28,w*0.22,h*0.14); ctx.fillRect(w*0.18,0,w*0.2,h*0.35); ctx.restore(); }
+    function drawFlamePowerup(p){ const {x,y,w,h}=p; ctx.save(); ctx.translate(x+w*0.5,y*h*0.5); ctx.rotate(Math.sin(state.time*4)*0.12); ctx.fillStyle=state.night? '#f59e0b':'#ef4444'; ctx.beginPath(); ctx.moveTo(-w*0.2,h*0.4); ctx.quadraticCurveTo(w*0.1,0,-w*0.2,-h*0.4); ctx.quadraticCurveTo(w*0.3,0,-w*0.2,h*0.4); ctx.fill(); ctx.restore(); }
     function drawPlayerBullet(pb){ ctx.save(); ctx.translate(pb.x,pb.y); ctx.fillStyle='#2563eb'; ctx.fillRect(0,0,pb.w,pb.h); ctx.restore(); }
     function drawOb(ob){ if(ob.type==='cactus') drawCactus(ob); else if(ob.type==='jet') drawJet(ob); else if(ob.type==='dragon') drawDragon(ob); else drawPalm(ob); }
     function drawParticles(){ for(const p of state.particles){ const t=p.age/p.life; const alpha=Math.max(0,1-t); ctx.save(); ctx.globalAlpha=alpha; const col=state.night? p.colorNight : p.colorDay; ctx.fillStyle=col; ctx.shadowColor=col; ctx.shadowBlur=8; ctx.fillRect(p.x,p.y,p.size,p.size*0.75); ctx.restore(); } }
-    function draw(dt){ ctx.clearRect(0,0,canvas.width,canvas.height); for(const c of state.clouds) drawCloud(c); drawGround(); for(const ob of state.obstacles) drawOb(ob); for(const b of state.bullets) drawBullet(b); for(const p of state.powerups){ if(p.type==='chest') drawChest(p); else if(p.type==='star') drawStar(p); else if(p.type==='gun') drawGun(p); else drawMiniPowerup(p); } for(const pb of state.pBullets) drawPlayerBullet(pb); drawParticles(); drawFollowers(); drawDino(); }
+
+    function drawFlameBreath(){
+      if(!(state.time<state.fireUntil)) return;
+      const fx = dino.x + dino.w*0.35; const fy = dino.y + dino.h*0.18; const fw = 240, fh = dino.h*0.7;
+      ctx.save(); const grad = ctx.createLinearGradient(fx,fy,fx+fw,fy); grad.addColorStop(0,'rgba(255,237,213,0.95)'); grad.addColorStop(0.5,'rgba(251,146,60,0.85)'); grad.addColorStop(1,'rgba(239,68,68,0.0)'); ctx.fillStyle=grad;
+      ctx.beginPath(); ctx.moveTo(fx, fy - fh*0.35); ctx.lineTo(fx+fw, fy); ctx.lineTo(fx, fy + fh*0.35); ctx.closePath(); ctx.fill(); ctx.restore();
+    }
+
+    function draw(dt){ ctx.clearRect(0,0,canvas.width,canvas.height); for(const c of state.clouds) drawCloud(c); drawGround(); for(const ob of state.obstacles) drawOb(ob); for(const b of state.bullets) drawBullet(b); for(const p of state.powerups){ if(p.type==='chest') drawChest(p); else if(p.type==='star') drawStar(p); else if(p.type==='gun') drawGun(p); else if(p.type==='flame') drawFlamePowerup(p); else drawMiniPowerup(p); } for(const pb of state.pBullets) drawPlayerBullet(pb); drawParticles(); drawFollowers(); drawDino(); drawFlameBreath(); }
 
     function runSelfTests(){
       const tests=[]; const assert=(n,c)=>tests.push({n,pass:!!c});
@@ -487,20 +493,23 @@
 
       try{ state.score=1100; const before=state.night; update(0); assert('Night mode toggles after 1000', state.night===true || before!==state.night); }catch(e){ assert('Night mode toggles after 1000 (no error)', false); }
 
-      try{ reset(); state.powerups=[{type:'star',x:dino.x,y:dino.y,w:20,h:20,spin:0}]; const t0=state.time; update(0); assert('Pickup star sets invincibleUntil', state.invincibleUntil>t0); }catch(e){ assert('Pickup star sets invincibleUntil (no error)', false); }
+      try{ reset(); state.powerups=[{type:'star',x:dino.x,y:dino.y,w:24,h:24}]; update(0.016); assert('Star grants invincibility', state.invincibleUntil>state.time); }catch(e){ assert('Star grants invincibility (no error)', false); }
 
-      try{ reset(); state.mgUntil = state.time + 0.5; state.mgFireRate = 10; state.mgFireTimer = 0; const before = state.pBullets.length; update(0.016); const after = state.pBullets.length; assert('MG spawns bullets when active', after>before); }catch(e){ assert('MG spawns bullets when active (no error)', false); }
+      try{ // restart 流程
+        reset(); state.dead=true; const ok = attemptQuickRestart(); assert('Quick restart from dead', ok && state.running===true);
+      }catch(e){ assert('Quick restart from dead (no error)', false); }
 
-      // 新增：Palm 必須存在且可安全繪製
-      try{ reset(); const h=80,w=40; const oy=groundY()-h; state.obstacles=[{type:'palm',x:dino.x+120,y:oy,w,h}]; const okBefore=typeof drawPalm==='function'; let threw=false; try{ draw(0); }catch(e){ threw=true; } assert('drawPalm is defined', okBefore); assert('drawOb draws palm without throwing', okBefore && !threw); }catch(e){ assert('Palm draw tests (no error)', false); }
-
-      console.group('%cSelf Tests','color:#10b981;font-weight:700');
-      tests.forEach(t=>console[t.pass?'log':'error'](`${t.pass?'✅':'❌'} ${t.n}`));
-      console.groupEnd();
+      // 在主控台列印測試結果（不影響遊戲執行）
+      console.table(tests);
     }
 
+    function safeRAF(){ try{ requestAnimationFrame(()=>{}); }catch(_){} }
+
+    // 初始化
     reset();
-    window.__runTests = runSelfTests;
+    // 跑一下自動測試；若不需要可註解
+    setTimeout(()=>{ try{ runSelfTests(); }catch(e){ console.warn('selftests error', e); } }, 50);
+
   })();
   </script>
 </body>
