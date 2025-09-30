@@ -33,3 +33,28 @@ git push origin main
 ## 修改內容
 - 直接編輯 `index.html`、CSS、JS 即可。
 - 如增刪檔案，記得同步更新 `sw.js` 的 `CORE` 清單或改用更進階的 SW 打包流程（如 Workbox）。
+
+## 🦕 恐龍跳躍遊戲（PWA）## 
+
+**立即遊玩**  
+👉 https://cchouse168.github.io/cute-dino/
+
+![預覽圖](https://cchouse168.github.io/cute-dino/icons/icon-512.png)
+
+### 📲 安裝到手機（PWA）
+- **Android（Chrome/Edge/Brave）**：打開連結 → 等候提示 **安裝應用程式**，或右上角「⋮」→ **安裝應用程式** / **加到主畫面**  
+- **iPhone（Safari）**：打開連結 → 共享鈕 → **加入主畫面**  
+- **桌面 Chrome**：網址列右側有 **安裝** 圖示，或選單中的 **安裝**
+
+### 🔗 分享給朋友
+- 直接分享連結：`https://cchouse168.github.io/cute-dino/`
+- 或掃描 QR Code：
+
+![QR Code](https://cchouse168.github.io/cute-dino/icons/qr.png)
+
+### 🆕 版本更新
+若你更新了網站內容，記得把 `sw.js` 的快取名稱改一下（例如 `cute-dino-v2`）來讓使用者拿到最新檔案。  
+遇到快取問題可提示使用者「重新整理或清除網站資料」。
+
+---
+
