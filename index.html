@@ -6,17 +6,13 @@
   <title>恐龍跳躍遊戲</title>
   <!--
     單檔（HTML+CSS+JS）恐龍跳躍遊戲
-    版本：V11.2 — 2025-09-30
+    版本：V14.2 — 2025-09-30 (L10 外觀最終修正)
 
-    這版重點修正：
-    - 修掉「卡在初始畫面無法開始」的根因（事件繫結覆蓋 + 測試段落未結束導致語法中斷）。
-      1) 新增 *全域* 啟動保險：document 也監聽 pointerdown/keydown（{passive:false}），不只 #game。
-      2) 遊戲覆蓋層（centerTip）也能點任意處立即 restart，且不會吞掉事件。
-      3) 自動化測試 runSelfTests() 補齊，避免未結束的 try 區塊造成語法錯誤。
-    - 「第一次 Game Over 後無法重新開始」仍然保留修復：空白鍵 / Enter / 點擊覆蓋層 或 R 皆可重來。
-    - 其他功能（皇冠、噴火道具、MG、夜間模式、手機觸控等）維持。
+    變更重點：
+    - 修正 L10 背鰭位置與顏色，改為彩虹漸層。
+    - 為 L10 恐龍新增一條動態的彩虹尾巴。
+    - 其他各階級外觀（頭帶、翅膀、背刺）保持不變。
   -->
-
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%2360a5fa'/%3E%3Cstop offset='1' stop-color='%238b5cf6'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='12' fill='url(%23g)'/%3E%3Cg fill='%230b1020'%3E%3Crect x='18' y='28' width='28' height='16' rx='4'/%3E%3Crect x='34' y='18' width='18' height='12' rx='4'/%3E%3Crect x='22' y='44' width='8' height='10' rx='3'/%3E%3Crect x='34' y='44' width='8' height='10' rx='3'/%3E%3Ccircle cx='48' cy='22' r='2.2' fill='%23fff'/%3E%3Ccircle cx='48' cy='22' r='1.1'/%3E%3C/g%3E%3C/svg%3E"/>
   <meta name="theme-color" content="#0b1020"/>
   <style>
@@ -137,6 +133,7 @@
     document.addEventListener('webkitfullscreenchange', ()=>{ updateFSUI(); fitCanvas(); });
     document.addEventListener('keydown', e=>{ if(e.key==='f'||e.key==='F') toggleFullscreen(); });
 
+    // --- Audio ---
     let AC=null, master=null, noiseBuf=null; const audio={enabled:true, volume:0.6, started:false};
     function ensureAudio(){ if(AC) return; AC=new (window.AudioContext||window.webkitAudioContext)(); master=AC.createGain(); master.gain.value=audio.volume; master.connect(AC.destination); const len=AC.sampleRate*1.0; noiseBuf=AC.createBuffer(1,len,AC.sampleRate); const data=noiseBuf.getChannelData(0); for(let i=0;i<len;i++){ data[i]=(Math.random()*2-1)*(1-i/len);} audio.started=true; }
     function setVolume(v){ audio.volume=v; if(master) master.gain.value=v; }
@@ -147,6 +144,7 @@
     volEl?.addEventListener('input', e=> setVolume(parseFloat(e.target.value||'0.6')));
     document.addEventListener('keydown', e=>{ if(e.key==='m'||e.key==='M') btnAudio.click(); });
 
+    // --- Game State ---
     const W=()=>canvas.clientWidth, H=()=>canvas.clientHeight, LEFT_X=()=>Math.max(80,W()*0.08);
     const state={
       running:false, paused:false, dead:false,
@@ -166,6 +164,7 @@
     const dino={ x:LEFT_X(), y:0, w:70, h:70, baseH:70, crouchH:46, vy:0, onGround:true, vx:0, crouch:false };
     function groundY(){ return H()-80; }
 
+    // --- Lifecycle ---
     function reset(){
       state.running=false; state.paused=false; state.dead=false;
       state.time=0; state.nextSpeedUpAt=state.speedUpEvery;
@@ -184,20 +183,51 @@
     function pauseToggle(){ if(!state.running) return; state.paused=!state.paused; btnPause.textContent= state.paused? '繼續(P)' : '暫停(P)'; if(!state.paused){ lastTs=performance.now(); requestAnimationFrame(loop);} }
     function restart(){ reset(); start(); }
     function rand(a,b){ return a+Math.random()*(b-a); }
-
     function attemptQuickRestart(){ if(state.dead){ restart(); return true; } return false; }
 
+    // --- Controls (雙保險啟動) ---
     function handlePress(e){ e.preventDefault(); if(attemptQuickRestart()) return; if(!state.running) start(); if(dino.onGround) doJump(); state.holdingJump=true; }
     function handleRelease(){ state.holdingJump=false; }
-    // 主要區塊監聽
     gameDiv.addEventListener('pointerdown', handlePress, {passive:false});
     gameDiv.addEventListener('pointerup', handleRelease);
     gameDiv.addEventListener('pointercancel', handleRelease);
     gameDiv.addEventListener('pointerleave', handleRelease);
-    // 全域保險（避免某些嵌入/瀏覽器環境事件被吞掉）
     document.addEventListener('pointerdown', (e)=>{ if(!state.running || state.dead){ handlePress(e); } }, {passive:false});
     document.addEventListener('pointerup', ()=> handleRelease());
 
+    function doJump(){
+      if(state.dead) return; if(audio.enabled && !audio.started) ensureAudio(); start();
+      if(dino.onGround){ dino.vy=state.jumpV; dino.onGround=false; state.holdingJump=true; state.jumpHold=0; dino.crouch=false; if(audio.enabled) sfx.jump(); }
+    }
+    const keys={left:false,right:false,down:false};
+    document.addEventListener('keydown', e=>{
+      if((e.code==='Space' || e.key==='Enter') && state.dead){ e.preventDefault(); restart(); return; }
+      if(e.code==='Space'){ e.preventDefault(); if(!state.running) start(); if(dino.onGround) doJump(); state.holdingJump=true; }
+      if(e.key==='p'||e.key==='P') pauseToggle();
+      if(e.key==='r'||e.key==='R') restart();
+      if(e.key==='ArrowLeft'||e.key==='a'||e.key==='A') keys.left=true;
+      if(e.key==='ArrowRight'||e.key==='d'||e.key==='D') keys.right=true;
+      if(e.key==='ArrowDown'||e.key==='s'||e.key==='S'){ keys.down=true; if(dino.onGround) dino.crouch=true; }
+
+      // --- Dev: quick tier switch (方案 B，測試用) ---
+      if (/^[0-9]$/.test(e.key) && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        const n = (e.key === '0' ? (e.shiftKey ? 10 : 0) : parseInt(e.key, 10));
+        state.score = n * 1000;
+      }
+      if (e.key === 'T' || e.key === 't') {
+        state.score = 10000;
+      }
+    }, {passive:false});
+    document.addEventListener('keyup', e=>{
+      if(e.code==='Space') state.holdingJump=false;
+      if(e.key==='ArrowLeft'||e.key==='a'||e.key==='A') keys.left=false;
+      if(e.key==='ArrowRight'||e.key==='d'||e.key==='D') keys.right=false;
+      if(e.key==='ArrowDown'||e.key==='s'||e.key==='S'){ keys.down=false; dino.crouch=false; }
+    });
+    btnPause.addEventListener('click', ()=>pauseToggle());
+    btnRestart.addEventListener('click', ()=>restart());
+
+    // --- Spawns ---
     function spawnObstacle(){
       const baseX=W()+60; 
       let t='cactus'; const r=Math.random();
@@ -223,46 +253,24 @@
       let pType, w, h, y; const r=Math.random();
       if(r<0.50){ pType='chest'; w=34; h=28; y=groundY()-h; }
       else if(r<0.70){ pType='star'; w=32; h=32; y= groundY() - (90 + Math.random()*120); }
-      else if(r<0.85){ pType='gun'; w=52; h=28; y= groundY() - (70 + Math.random()*120); }
+      else if(r<0.85){ pType='gun';  w=52; h=28; y= groundY() - (70 + Math.random()*120); }
       else { pType='mini'; w=30; h=24; y= groundY() - h; }
-      if(state.score>=5000 && Math.random()<0.25){ pType='flame'; w=36; h=32; y= groundY() - (80 + Math.random()*100); }
-      const obj={type:pType,x:baseX,y,w,h}; if(pType==='star') obj.spin=0; if(pType==='gun') obj.wiggle=0; state.powerups.push(obj);
+      if(state.score>=5000 && Math.random()<0.25){ pType='flame'; w=40; h=40; y= groundY() - (70 + Math.random()*120); }
+      const obj={type:pType,x:baseX,y,w,h}; if(pType==='star') obj.spin=0; if(pType==='gun'||pType==='flame') obj.wiggle=0; state.powerups.push(obj);
     }
     let spawnTimer=0, powerTimer=3.5; 
 
-    const keys={left:false,right:false,down:false};
-    function doJump(){ 
-      if(state.dead) return; if(audio.enabled && !audio.started) ensureAudio(); start();
-      if(dino.onGround){ dino.vy=state.jumpV; dino.onGround=false; state.holdingJump=true; state.jumpHold=0; dino.crouch=false; if(audio.enabled) sfx.jump(); }
-    }
-    document.addEventListener('keydown', e=>{
-      // Game Over 狀態：空白鍵 / Enter 直接重開
-      if((e.code==='Space' || e.key==='Enter') && state.dead){ e.preventDefault(); restart(); return; }
-      if(e.code==='Space'){ e.preventDefault(); if(!state.running) start(); if(dino.onGround) doJump(); state.holdingJump=true; }
-      if(e.key==='p'||e.key==='P') pauseToggle();
-      if(e.key==='r'||e.key==='R') restart();
-      if(e.key==='ArrowLeft'||e.key==='a'||e.key==='A') keys.left=true;
-      if(e.key==='ArrowRight'||e.key==='d'||e.key==='D') keys.right=true;
-      if(e.key==='ArrowDown'||e.key==='s'||e.key==='S'){ keys.down=true; if(dino.onGround) dino.crouch=true; }
-    }, {passive:false});
-    document.addEventListener('keyup', e=>{
-      if(e.code==='Space') state.holdingJump=false;
-      if(e.key==='ArrowLeft'||e.key==='a'||e.key==='A') keys.left=false;
-      if(e.key==='ArrowRight'||e.key==='d'||e.key==='D') keys.right=false;
-      if(e.key==='ArrowDown'||e.key==='s'||e.key==='S'){ keys.down=false; dino.crouch=false; }
-    });
-    btnPause.addEventListener('click', ()=>pauseToggle());
-    btnRestart.addEventListener('click', ()=>restart());
-
+    // --- Helpers ---
     function intersects(a,b){ return a.x<b.x+b.w && a.x+a.w>b.x && a.y<b.y+b.h && a.y+a.h>b.y; }
     function spawnSparks(x,y,n=20,baseV=340,life=0.6,size=4,colorDay='#ffd166',colorNight='#ffffff'){
       for(let i=0;i<n;i++){
         const ang=Math.random()*Math.PI - Math.PI/2; 
-        const spd=baseV*(0.5+Math.random());
-        state.particles.push({x,y, vx:Math.cos(ang)*spd, vy:Math.sin(ang)*spd*0.6-20, life:life*(0.8+Math.random()*0.4), age:0, size, colorDay, colorNight});
+        theSpd=baseV*(0.5+Math.random());
+        state.particles.push({x,y, vx:Math.cos(ang)*theSpd, vy:Math.sin(ang)*theSpd*0.6-20, life:life*(0.8+Math.random()*0.4), age:0, size, colorDay, colorNight});
       }
     }
 
+    // --- Loop ---
     let lastTs=0; function loop(ts){ if(!state.running||state.paused) return; const dt=Math.min(0.032,(ts-lastTs)/1000); lastTs=ts; update(dt); draw(dt); requestAnimationFrame(loop); }
     function isNightForScore(score){ return (Math.floor(score/1000)%2)===1; }
 
@@ -300,7 +308,7 @@
       for(const b of state.bullets){ b.x -= b.v*dt; }
       state.bullets = state.bullets.filter(b=> b.x+b.w > -60);
 
-      for(const p of state.powerups){ p.x -= worldV*0.9*dt; if(p.type==='star') p.spin += dt*6; if(p.type==='gun'){ p.wiggle += dt*4; p.y += Math.sin(p.wiggle)*0.3; } }
+      for(const p of state.powerups){ p.x -= worldV*0.9*dt; if(p.type==='star') p.spin += dt*6; if(p.type==='gun'||p.type==='flame'){ p.wiggle += dt*4; p.y += Math.sin(p.wiggle)*0.3; } }
       state.powerups = state.powerups.filter(p=> p.x+p.w > -60);
 
       state.score += worldV*dt*0.02; scoreEl.textContent=`分數：${Math.floor(state.score)}`; speedEl.textContent=`速度：${state.speedScale.toFixed(1)}×`;
@@ -333,8 +341,7 @@
       }
 
       // 機關槍
-      const mgOn2 = (state.time<state.mgUntil);
-      if(mgOn2){
+      if(state.time<state.mgUntil){
         state.mgFireTimer -= dt;
         if(state.mgFireTimer<=0){
           state.mgFireTimer=1.0/state.mgFireRate;
@@ -346,12 +353,13 @@
       for(const pb of state.pBullets){ pb.x += pb.v*dt; }
 
       // 噴火
-      if(fireOn){
+      if(state.time<state.fireUntil){
         const fx = dino.x + dino.w*0.35; const fy = dino.y + dino.h*0.18; const fw = 240; const fh = dino.h*0.7; const flameBox = {x:fx, y:fy - fh*0.5, w:fw, h:fh};
         for(let j=state.obstacles.length-1;j>=0;j--){ const ob=state.obstacles[j]; if(intersects(flameBox,{x:ob.x,y:ob.y,w:ob.w,h:ob.h})){ spawnSparks(ob.x+ob.w*0.5, ob.y+ob.h*0.5,24,420,0.7,5,'#ffedd5','#fff7ed'); state.obstacles.splice(j,1); state.score += 40; }}
         for(let k=state.bullets.length-1;k>=0;k--){ const b=state.bullets[k]; if(intersects(flameBox,b)){ spawnSparks(b.x,b.y,12,360,0.5,4,'#ffd7a1','#fff'); state.bullets.splice(k,1);} }
       }
 
+      // 子彈 vs 障礙
       for(let i=state.pBullets.length-1;i>=0;i--){
         const pb=state.pBullets[i]; let collided=false;
         for(let j=state.obstacles.length-1;j>=0;j--){ const ob=state.obstacles[j]; if(intersects(pb,{x:ob.x,y:ob.y,w:ob.w,h:ob.h})){
@@ -368,6 +376,7 @@
         if(collided || pb.x>W()+60){ state.pBullets.splice(i,1); }
       }
 
+      // 粒子
       for(const p of state.particles){ p.age+=dt; p.x+=p.vx*dt; p.y+=p.vy*dt; p.vy += 900*dt*0.6; }
       state.particles = state.particles.filter(p=> p.age<p.life);
     }
@@ -388,21 +397,66 @@
       tip.querySelector('#tapRestart')?.addEventListener('pointerdown', restartOnTap, { once:true });
     }
 
+    // --- Drawing primitives ---
     function roundRect(x,y,w,h,r,fill){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); if(fill) ctx.fill(); else ctx.stroke(); }
+
+    function drawGoldCrown(cx, cy, w, h, tilt=0){
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(tilt);
+      ctx.fillStyle = 'rgba(0,0,0,0.12)';
+      ctx.beginPath(); ctx.ellipse(0, h*0.46, w*0.42, h*0.18, 0, 0, Math.PI*2); ctx.fill();
+      const grad = ctx.createLinearGradient(-w*0.6, -h*0.6, w*0.6, h*0.8);
+      grad.addColorStop(0.00, '#f59e0b');
+      grad.addColorStop(0.45, '#facc15');
+      grad.addColorStop(0.70, '#fde68a');
+      grad.addColorStop(1.00, '#f59e0b');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.moveTo(-w*0.55,  h*0.30); ctx.lineTo(-w*0.32, -h*0.15); ctx.lineTo(-w*0.10,  h*0.30);
+      ctx.lineTo( 0, -h*0.30); ctx.lineTo( w*0.10,  h*0.30); ctx.lineTo( w*0.32, -h*0.15);
+      ctx.lineTo( w*0.55,  h*0.30); ctx.closePath(); ctx.fill();
+      const rim = ctx.createLinearGradient(0, h*0.05, 0, h*0.55);
+      rim.addColorStop(0,'#fde047'); rim.addColorStop(1,'#f59e0b');
+      ctx.fillStyle = rim;
+      ctx.beginPath(); ctx.ellipse(0, h*0.38, w*0.55, h*0.20, 0, 0, Math.PI*2); ctx.fill();
+      function bead(x, y, r){
+        const g = ctx.createRadialGradient(x-r*0.4,y-r*0.4, r*0.1, x,y, r);
+        g.addColorStop(0,'#fff7cc'); g.addColorStop(0.4,'#fde047'); g.addColorStop(1,'#f59e0b');
+        ctx.fillStyle=g; ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
+        ctx.fillStyle='rgba(255,255,255,0.55)'; ctx.beginPath(); ctx.arc(x-r*0.25,y-r*0.35,r*0.25,0,Math.PI*2); ctx.fill();
+      }
+      bead(-w*0.32, -h*0.20, h*0.16); bead( 0, -h*0.38, h*0.18); bead( w*0.32, -h*0.20, h*0.16);
+      ctx.globalAlpha=0.45; ctx.fillStyle='#ffffff';
+      ctx.beginPath();
+      ctx.moveTo(-w*0.18, -h*0.02); ctx.quadraticCurveTo(0,-h*0.14, w*0.18,-h*0.02); ctx.quadraticCurveTo(w*0.02, h*0.04, -w*0.18,-h*0.02);
+      ctx.closePath(); ctx.fill(); ctx.globalAlpha=1;
+      ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth=1;
+      ctx.beginPath();
+      ctx.moveTo(-w*0.55,  h*0.30); ctx.lineTo(-w*0.32, -h*0.15); ctx.lineTo(-w*0.10,  h*0.30);
+      ctx.lineTo( 0, -h*0.30); ctx.lineTo( w*0.10,  h*0.30); ctx.lineTo( w*0.32, -h*0.15);
+      ctx.lineTo( w*0.55,  h*0.30); ctx.stroke();
+      ctx.restore();
+    }
 
     function drawGround(){ const y=groundY(); ctx.fillStyle=state.night?'#111827':'#e5e7eb'; ctx.fillRect(0,y,W(),H()-y); ctx.strokeStyle=state.night?'#374151':'#d1d5db'; ctx.lineWidth=2; ctx.beginPath(); const step=24; const offset=(state.time*state.speed*state.speedScale*0.2)%step; for(let x=-offset; x<W()+step; x+=step){ ctx.moveTo(x,y+10); ctx.lineTo(x+14,y+10); } ctx.stroke(); }
     function drawCloud(c){ ctx.save(); ctx.translate(c.x,c.y); ctx.beginPath(); const r=c.r; ctx.fillStyle=state.night?'rgba(255,255,255,.25)':'rgba(255,255,255,.9)'; ctx.arc(-r*0.6,0,r*0.6,0,Math.PI*2); ctx.arc(0,-r*0.2,r*0.8,0,Math.PI*2); ctx.arc(r*0.7,0,r*0.5,0,Math.PI*2); ctx.fill(); ctx.restore(); }
 
     function currentSkinTier(){ return Math.min(10, Math.floor(state.score/1000)); }
+    
+    // [MODIFIED] 取得外觀設定，為 L10 新增尾巴屬性
     function getSkinForTier(tier){
-      if(tier>=10){ return { body:'#facc15', head:'#facc15', eye:'#0b1020', deco:'crown' }; }
-      if(tier===0){ return { body:'#374151', head:'#374151', eye:'#111', deco:null }; }
+      if(tier>=10){
+        return { body:'rainbow', head:'rainbow', eye:'#0b1020', deco:'crown', spines:true, eyeStyle:'angry', tail:true };
+      }
+      if(tier===0){ return { body:'#374151', head:'#374151', eye:'#111', deco:null, spines:false, eyeStyle:'round' }; }
       const hue = (tier*34)%360; const body = `hsl(${hue} 70% 55%)`; const eye = '#0b1020';
-      const pattern = tier % 3; const deco = pattern===1? 'headband' : (pattern===2? 'wing' : null);
-      return { body, head:body, eye, deco };
-    }
+      
+      const pattern = (tier - 1) % 3;
+      const deco = pattern === 0 ? 'headband' : (pattern === 1 ? 'wing' : 'spines');
 
-    function drawCrown(scale=1){ ctx.save(); ctx.fillStyle='#facc15'; ctx.beginPath(); const w=32*scale, h=16*scale; ctx.moveTo(0,0); ctx.lineTo(w*0.2,-h); ctx.lineTo(w*0.4,0); ctx.lineTo(w*0.6,-h); ctx.lineTo(w*0.8,0); ctx.lineTo(0,0); ctx.fill(); ctx.restore(); }
+      return { body, head:body, eye, deco, spines:false, eyeStyle:'round' };
+    }
 
     function drawDino(){
       const x=dino.x,y=dino.y,w=dino.w,h=dino.h; const tier=currentSkinTier();
@@ -410,44 +464,191 @@
       const gy=groundY();
       const sh=Math.max(4,14-(gy-(y+h))*0.06); ctx.fillStyle='rgba(0,0,0,.12)'; ctx.beginPath(); ctx.ellipse(x,gy+6,36,sh,0,0,Math.PI*2); ctx.fill();
       ctx.translate(x,y);
-      const skin = getSkinForTier(tier); let body=skin.body, head=skin.head, eye=skin.eye, deco=skin.deco;
+      const skin = getSkinForTier(tier);
       const crouch=dino.crouch && dino.onGround;
-      ctx.fillStyle=body; if(crouch){ roundRect(-w*0.35,h*0.25,w*0.7,h*0.45,10,true); ctx.fillStyle=head; roundRect(0,h*0.02,w*0.42,h*0.28,10,true); } else { roundRect(-w*0.35,h*0.05,w*0.7,h*0.55,10,true); ctx.fillStyle=head; roundRect(w*0.05,-h*0.15,w*0.45,h*0.35,10,true); }
-      const t=state.time*10; const k=Math.sin(t)*6; ctx.fillStyle=body; if(crouch){ roundRect(-w*0.18,h*0.58,w*0.26,h*0.25,8,true); roundRect(0,h*0.58,w*0.26,h*0.25,8,true); } else { roundRect(-w*0.15,h*0.6,w*0.22,h*0.3,8,true); roundRect(w*0.02+k*0.02,h*0.6,w*0.22,h*0.3,8,true); }
+
+      // [MODIFIED] L10 背鰭，修正位置並改為彩虹漸層
+      function drawDorsalFin(){
+        if(!skin.spines) return;
+        ctx.save();
+        setBodyFill(); // 使用彩虹漸層
+        const fins=[
+          {px: -w*0.10, py: (crouch? h*0.22 : h*0.02), s:14},
+          {px: -w*0.20, py: (crouch? h*0.24 : h*0.05), s:16},
+          {px: -w*0.30, py: (crouch? h*0.22 : h*0.08), s:12},
+        ];
+        fins.forEach(f=>{ 
+            ctx.beginPath();
+            ctx.moveTo(f.px, f.py);
+            ctx.lineTo(f.px - f.s * 0.7, f.py + f.s);
+            ctx.lineTo(f.px + f.s * 0.7, f.py + f.s);
+            ctx.closePath();
+            ctx.fill();
+        });
+        ctx.restore();
+      }
+
+      function drawWing(){
+        if(skin.deco !== 'wing') return;
+        ctx.save();
+        const backX = -w * 0.25;
+        const backY = crouch ? h * 0.45 : h * 0.30;
+        const hue = (tier*34)%360;
+        ctx.fillStyle = `hsla(${hue}, 70%, 80%, 0.8)`;
+        ctx.strokeStyle = `hsla(${hue}, 70%, 50%, 0.9)`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        if (tier === 2) { 
+            ctx.moveTo(backX, backY);
+            ctx.quadraticCurveTo(backX - w * 0.4, backY - h * 0.3, backX - w*0.1, backY - h * 0.5);
+            ctx.quadraticCurveTo(backX + w * 0.1, backY - h * 0.2, backX, backY);
+        } else { 
+            ctx.moveTo(backX, backY);
+            ctx.quadraticCurveTo(backX - w*0.5, backY - h*0.4, backX - w*0.2, backY - h*0.7);
+            ctx.quadraticCurveTo(backX - w*0.2, backY - h*0.3, backX + w*0.05, backY - h*0.1);
+            ctx.lineTo(backX, backY);
+            if (tier === 8) { 
+                ctx.moveTo(backX - w*0.1, backY);
+                ctx.quadraticCurveTo(backX - w*0.6, backY - h*0.2, backX - w*0.4, backY - h*0.5);
+                ctx.quadraticCurveTo(backX - w*0.2, backY - h*0.1, backX - w*0.1, backY);
+            }
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      function drawTierSpines(){
+          if(skin.deco !== 'spines') return;
+          ctx.save();
+          const hue = (tier*34)%360;
+          ctx.fillStyle = `hsl(${hue}, 60%, 45%)`;
+          const spinePoints = [
+              {px: -w*0.05, py: (crouch ? h*0.15 : -h*0.05)},
+              {px: -w*0.15, py: (crouch ? h*0.18 : -h*0.02)},
+              {px: -w*0.25, py: (crouch ? h*0.15 :  h*0.00)},
+          ];
+          spinePoints.forEach(p => {
+              ctx.beginPath();
+              ctx.moveTo(p.px, p.py);
+              ctx.lineTo(p.px - 5, p.py + 10);
+              ctx.lineTo(p.px + 5, p.py + 10);
+              ctx.closePath();
+              ctx.fill();
+          });
+          ctx.restore();
+      }
+      
+      function drawHeadband() {
+          if(skin.deco !== 'headband') return;
+          ctx.save();
+          const headX = crouch ? 0 : w*0.05; const headW = crouch ? w*0.42 : w*0.45;
+          const headY = crouch ? h*0.02 : -h*0.15; const headH = crouch ? h*0.28 : h*0.35;
+          ctx.fillStyle = tier === 1 ? '#e11d48' : (tier === 4 ? '#2563eb' : '#16a34a');
+          const bandY = headY + headH * 0.25;
+          const bandH = tier >= 4 ? 7 : 5;
+          ctx.fillRect(headX + headW * 0.1, bandY - bandH/2, headW * 0.85, bandH);
+          if (tier === 7) {
+              ctx.fillStyle = '#fde047';
+              ctx.beginPath();
+              ctx.arc(headX + headW * 0.5, bandY, 5, 0, Math.PI * 2);
+              ctx.fill();
+              ctx.fillStyle = 'rgba(255,255,255,0.7)';
+              ctx.beginPath();
+              ctx.arc(headX + headW * 0.5 - 1.5, bandY - 1.5, 1.5, 0, Math.PI*2);
+              ctx.fill();
+          }
+          ctx.restore();
+      }
+
+      // [NEW] 繪製 L10 尾巴
+      function drawTail() {
+          if (!skin.tail) return;
+          ctx.save();
+          setBodyFill();
+          const tailRootX = -w * 0.35;
+          const tailRootY = crouch ? h * 0.5 : h * 0.35;
+          const bob = Math.sin(state.time * 7) * 0.1; 
+          ctx.translate(tailRootX, tailRootY);
+          ctx.rotate(-0.5 + bob);
+          roundRect(0, -h * 0.1, w * 0.4, h * 0.2, 8, true);
+          ctx.restore();
+      }
+
+      function setBodyFill(){
+        if(skin.body==='rainbow'){
+          const grad = ctx.createLinearGradient(-w*0.35,0, w*0.60,0);
+          const stops=[[0,'#ef4444'],[0.16,'#f59e0b'],[0.33,'#facc15'],[0.50,'#10b981'],[0.66,'#3b82f6'],[0.83,'#8b5cf6'],[1,'#ec4899']];
+          stops.forEach(([p,c])=>grad.addColorStop(p,c));
+          ctx.fillStyle=grad;
+        }else{
+          ctx.fillStyle=skin.body;
+        }
+      }
+
+      // --- 繪製順序 ---
+      drawTail();
+      drawWing();
+      setBodyFill(); if(crouch){ roundRect(-w*0.35,h*0.25,w*0.7,h*0.45,10,true); } else { roundRect(-w*0.35,h*0.05,w*0.7,h*0.55,10,true); }
+      setBodyFill(); if(crouch){ roundRect(0,h*0.02,w*0.42,h*0.28,10,true); } else { roundRect(w*0.05,-h*0.15,w*0.45,h*0.35,10,true); }
+      drawTierSpines();
+      drawDorsalFin();
+
+      if(skin.deco==='crown'){
+        const headX = crouch ? 0 : w*0.05;
+        const headW = crouch ? w*0.42 : w*0.45;
+        const headTop = crouch ? h*0.02 : -h*0.15;
+        const cx = headX + headW*0.5;
+        const cy = headTop - (crouch? h*0.06: h*0.10);
+        const cw = w*0.42; const ch = w*0.22;
+        drawGoldCrown(cx, cy, cw, ch, -0.05);
+      }
+      
+      drawHeadband();
+
+      const t=state.time*10; const k=Math.sin(t)*6; setBodyFill(); if(crouch){ roundRect(-w*0.18,h*0.58,w*0.26,h*0.25,8,true); roundRect(0,h*0.58,w*0.26,h*0.25,8,true); } else { roundRect(-w*0.15,h*0.6,w*0.22,h*0.3,8,true); roundRect(w*0.02+k*0.02,h*0.6,w*0.22,h*0.3,8,true); }
       if(!crouch) roundRect(-w*0.3,h*0.25,w*0.18,h*0.12,6,true);
-      ctx.fillStyle='#fff'; const eyeY=crouch? h*0.12 : -h*0.02; ctx.beginPath(); ctx.arc(w*0.38,eyeY,5,0,Math.PI*2); ctx.fill(); ctx.fillStyle=eye; ctx.beginPath(); ctx.arc(w*0.38,eyeY,2.4,0,Math.PI*2); ctx.fill();
-      if(deco==='headband'){ ctx.fillStyle='#ef4444'; ctx.fillRect(w*0.02,(crouch? h*0.02 : -h*0.12),w*0.46,6); }
-      else if(deco==='wing'){ ctx.save(); ctx.translate(-w*0.4,h*0.05); ctx.rotate(-0.4); ctx.fillStyle='hsl(160 80% 80%)'; ctx.beginPath(); ctx.moveTo(0,0); ctx.quadraticCurveTo(-28,-14,-52,0); ctx.quadraticCurveTo(-28,14,0,0); ctx.fill(); ctx.restore(); }
-      else if(deco==='crown'){ ctx.save(); ctx.translate(w*0.22,(crouch? -h*0.06 : -h*0.22)); drawCrown(1.0); ctx.restore(); }
+
+      if(skin.eyeStyle==='angry'){
+        const eyeY=crouch? h*0.08 : -h*0.06; const ex=w*0.38;
+        ctx.fillStyle='#fff'; ctx.save(); ctx.translate(ex,eyeY); ctx.rotate(-0.25); ctx.beginPath(); ctx.ellipse(0,0,6,4,0,0,Math.PI*2); ctx.fill();
+        ctx.fillStyle='#ef4444'; ctx.beginPath(); ctx.ellipse(1,0,3.2,3.2,0,0,Math.PI*2); ctx.fill();
+        ctx.fillStyle='#000'; ctx.beginPath(); ctx.ellipse(1,0,1.5,1.5,0,0,Math.PI*2); ctx.fill();
+        ctx.strokeStyle= state.night? '#e5e7eb':'#111827'; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(-6,-5); ctx.lineTo(6,-8); ctx.stroke(); ctx.restore();
+      }else{
+        ctx.fillStyle='#fff'; const eyeY=crouch? h*0.12 : -h*0.02; ctx.beginPath(); ctx.arc(w*0.38,eyeY,5,0,Math.PI*2); ctx.fill(); ctx.fillStyle=skin.eye; ctx.beginPath(); ctx.arc(w*0.38,eyeY,2.4,0,Math.PI*2); ctx.fill();
+      }
+
       if(state.time<state.invincibleUntil){ ctx.lineWidth=3; ctx.strokeStyle='rgba(250,204,21,.9)'; roundRect(-w*0.42,-h*0.22,w*0.95,h*1.1,16,false); }
       ctx.restore();
     }
 
     function drawFollower(x,y,scale, skin){
       ctx.save(); ctx.translate(x,y); const w=70*(scale||0.55),h=70*(scale||0.55);
-      const body=skin?.body || '#4b5563'; const head=skin?.head || body; const eye=skin?.eye || '#111'; const deco=skin?.deco||null;
+      const body=skin?.body || '#4b5563'; const head=skin?.head || body; const eye=skin?.eye || '#111';
       ctx.fillStyle=body; roundRect(-w*0.35,h*0.05,w*0.7,h*0.55,8,true);
       ctx.fillStyle=head; roundRect(w*0.05,-h*0.15,w*0.45,h*0.35,8,true);
       ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(w*0.38,-h*0.02,3.2,0,Math.PI*2); ctx.fill();
       ctx.fillStyle=eye; ctx.beginPath(); ctx.arc(w*0.38,-h*0.02,1.5,0,Math.PI*2); ctx.fill();
-      if(deco==='crown') { ctx.save(); ctx.translate(w*0.22, -h*0.22); drawCrown(0.65); ctx.restore(); }
       ctx.restore();
     }
     function drawFollowers(){
       const skin = getSkinForTier(currentSkinTier());
       const baseY = dino.y + (dino.h - 40);
-      const baseOffset = 50;  const stepOffset = 38;
+      const baseOffset = 70;  const stepOffset = 44;
       for(let i=0;i<state.littles;i++){
-        const offset = baseOffset + stepOffset * i;   
-        const phase  = i*0.7;              
-        const bob    = Math.sin(state.time*10 + phase) * 1.2; 
+        const offset = baseOffset + stepOffset * i;
+        const phase  = i*0.7;
+        const bob    = Math.sin(state.time*10 + phase) * 1.2;
         const fy     = baseY + bob;
         drawFollower(dino.x - offset, fy, 0.55, skin);
       }
     }
 
+    // 障礙＆道具繪製
     function drawCactus(ob){ const {x,y,w,h}=ob; ctx.save(); ctx.translate(x,y+h); ctx.fillStyle='#16a34a'; roundRect(-w*0.45,-h, w*0.9, h, 6, true); roundRect(-w*0.95,-h*0.58, w*0.35, h*0.44, 6, true); roundRect( w*0.60,-h*0.46, w*0.35, h*0.36, 6, true); ctx.restore(); }
-    function drawJet(ob){ const {x,y,w,h}=ob; ctx.save(); ctx.translate(x,y); ctx.fillStyle=state.night? '#60a5fa' : '#111827'; ctx.beginPath(); ctx.moveTo(0,h*0.5); ctx.lineTo(w*0.55,h*0.5); ctx.lineTo(w*0.85,h*0.35); ctx.lineTo(w,h*0.5); ctx.lineTo(w*0.85,h*0.65); ctx.lineTo(w*0.55,h*0.5); ctx.closePath(); ctx.fill(); ctx.beginPath(); ctx.moveTo(w*0.22,0); ctx.lineTo(w*0.52,h*0.5); ctx.lineTo(w*0.22,h); ctx.closePath(); ctx.fill(); ctx.beginPath(); ctx.moveTo(w*0.12,h*0.2); ctx.lineTo(w*0.2,h*0.5); ctx.lineTo(w*0.12,h*0.8); ctx.closePath(); ctx.fill(); const flame=6+6*Math.sin(state.time*20); ctx.fillStyle=state.night? '#fbbf24' : '#f59e0b'; ctx.beginPath(); ctx.moveTo(-flame,h*0.5); ctx.lineTo(0,h*0.4); ctx.lineTo(0,h*0.6); ctx.closePath(); ctx.fill(); ctx.restore(); }
+    function drawJet(ob){ const {x,y,w,h}=ob; ctx.save(); ctx.translate(x,y); ctx.fillStyle=state.night? '#60a5fa' : '#111827'; ctx.beginPath(); ctx.moveTo(0,h*0.5); ctx.lineTo(w*0.55,h*0.5); ctx.lineTo(w*0.85,h*0.35); ctx.lineTo(w,h*0.5); ctx.lineTo(w*0.85,h*0.65); ctx.lineTo(w*0.55,h*0.5); ctx.closePath(); ctx.fill(); ctx.beginPath(); ctx.moveTo(w*0.22,0); ctx.lineTo(w*0.52,h*0.5); ctx.lineTo(w*0.22,h); ctx.closePath(); ctx.fill(); const flame=6+6*Math.sin(state.time*20); ctx.fillStyle=state.night? '#fbbf24' : '#f59e0b'; ctx.beginPath(); ctx.moveTo(-flame,h*0.5); ctx.lineTo(0,h*0.4); ctx.lineTo(0,h*0.6); ctx.closePath(); ctx.fill(); ctx.restore(); }
     function drawDragon(ob){ const {x,y,w,h}=ob; ctx.save(); ctx.translate(x,y); ctx.fillStyle = '#f59e0b'; roundRect(w*0.05,h*0.15,w*0.70,h*0.55,16,true); ctx.fillStyle = '#fde68a'; roundRect(w*0.16,h*0.36,w*0.46,h*0.28,10,true); ctx.fillStyle = '#f59e0b'; roundRect(-w*0.08,h*0.18,w*0.34,h*0.30,14,true); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(w*0.12,h*0.30,5,0,Math.PI*2); ctx.fill(); ctx.fillStyle='#111'; ctx.beginPath(); ctx.arc(w*0.12,h*0.30,2.4,0,Math.PI*2); ctx.fill(); ctx.fillStyle = state.night? '#93c5fd' : '#10b981'; ctx.beginPath(); ctx.moveTo(w*0.38,h*0.18); ctx.quadraticCurveTo(w*0.78,0,w*0.98,h*0.18); ctx.quadraticCurveTo(w*0.72,h*0.34,w*0.38,h*0.22); ctx.closePath(); ctx.fill(); ctx.fillStyle = '#f59e0b'; ctx.beginPath(); ctx.moveTo(w*0.70,h*0.58); ctx.quadraticCurveTo(w*0.92,h*0.70,w*1.02,h*0.58); ctx.lineTo(w*0.86,h*0.52); ctx.closePath(); ctx.fill(); ctx.restore(); }
     function drawPalm(ob){
       const {x,y,w,h}=ob;
@@ -461,7 +662,29 @@
     function drawChest(p){ const {x,y,w,h}=p; ctx.save(); ctx.translate(x,y); ctx.fillStyle='#f59e0b'; roundRect(0,0,w,h,4,true); ctx.fillStyle='#8b5a2b'; ctx.fillRect(0,h*0.5,w,h*0.18); ctx.fillStyle='#fff'; ctx.fillRect(w*0.48,h*0.2,w*0.04,h*0.6); ctx.fillRect(w*0.3,h*0.45,w*0.4,h*0.08); ctx.restore(); }
     function drawStar(p){ const {x,y,w,h,spin}=p; const r=Math.min(w,h)/2; ctx.save(); ctx.translate(x+w/2,y+h/2); ctx.rotate(spin); const spikes=5; let rot=Math.PI/2*3; const step=Math.PI/spikes; ctx.beginPath(); ctx.moveTo(0,-r); for(let i=0;i<spikes;i++){ ctx.lineTo(Math.cos(rot)*r,Math.sin(rot)*r); rot+=step; ctx.lineTo(Math.cos(rot)*r*0.5,Math.sin(rot)*r*0.5); rot+=step; } ctx.lineTo(0,-r); ctx.closePath(); ctx.fillStyle='#facc15'; ctx.fill(); ctx.restore(); }
     function drawGun(p){ const {x,y,w,h}=p; ctx.save(); ctx.translate(x,y); ctx.fillStyle=state.night? '#ffffff' : '#1f2937'; ctx.fillRect(0,h*0.35,w*0.85,h*0.35); ctx.fillRect(w*0.78,h*0.28,w*0.22,h*0.14); ctx.fillRect(w*0.18,0,w*0.2,h*0.35); ctx.restore(); }
-    function drawFlamePowerup(p){ const {x,y,w,h}=p; ctx.save(); ctx.translate(x+w*0.5,y*h*0.5); ctx.rotate(Math.sin(state.time*4)*0.12); ctx.fillStyle=state.night? '#f59e0b':'#ef4444'; ctx.beginPath(); ctx.moveTo(-w*0.2,h*0.4); ctx.quadraticCurveTo(w*0.1,0,-w*0.2,-h*0.4); ctx.quadraticCurveTo(w*0.3,0,-w*0.2,h*0.4); ctx.fill(); ctx.restore(); }
+    function drawFlamePowerup(p){
+      const {x,y,w,h}=p; const cx=x+w*0.5, cy=y+h*0.5; const t=state.time;
+      const flick=1+0.06*Math.sin(t*12)+0.04*Math.sin(t*20);
+      ctx.save();
+      ctx.translate(cx, cy - h*0.05*Math.sin(t*8));
+      ctx.scale(flick, flick);
+      let grad = ctx.createLinearGradient(0,-h*0.5, 0,h*0.5);
+      grad.addColorStop(0,'#ef4444'); grad.addColorStop(0.5,'#f97316'); grad.addColorStop(1,'#fb923c');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.moveTo(0,-h*0.45); ctx.quadraticCurveTo(w*0.34,-h*0.10, w*0.22,h*0.30);
+      ctx.quadraticCurveTo(0,h*0.50, -w*0.22,h*0.30); ctx.quadraticCurveTo(-w*0.34,-h*0.10, 0,-h*0.45);
+      ctx.closePath(); ctx.fill();
+      grad = ctx.createLinearGradient(0,-h*0.3, 0,h*0.3);
+      grad.addColorStop(0,'#fde047'); grad.addColorStop(1,'#fff7ed');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.moveTo(0,-h*0.28); ctx.quadraticCurveTo(w*0.18,-h*0.02, w*0.12,h*0.18);
+      ctx.quadraticCurveTo(0,h*0.30, -w*0.12,h*0.18); ctx.quadraticCurveTo(-w*0.18,-h*0.02, 0,-h*0.28);
+      ctx.closePath(); ctx.fill();
+      ctx.lineWidth=2; ctx.strokeStyle= state.night? 'rgba(255,255,255,0.8)' : 'rgba(31,41,55,0.9)'; ctx.stroke();
+      ctx.restore();
+    }
     function drawPlayerBullet(pb){ ctx.save(); ctx.translate(pb.x,pb.y); ctx.fillStyle='#2563eb'; ctx.fillRect(0,0,pb.w,pb.h); ctx.restore(); }
     function drawOb(ob){ if(ob.type==='cactus') drawCactus(ob); else if(ob.type==='jet') drawJet(ob); else if(ob.type==='dragon') drawDragon(ob); else drawPalm(ob); }
     function drawParticles(){ for(const p of state.particles){ const t=p.age/p.life; const alpha=Math.max(0,1-t); ctx.save(); ctx.globalAlpha=alpha; const col=state.night? p.colorNight : p.colorDay; ctx.fillStyle=col; ctx.shadowColor=col; ctx.shadowBlur=8; ctx.fillRect(p.x,p.y,p.size,p.size*0.75); ctx.restore(); } }
@@ -469,47 +692,44 @@
     function drawFlameBreath(){
       if(!(state.time<state.fireUntil)) return;
       const fx = dino.x + dino.w*0.35; const fy = dino.y + dino.h*0.18; const fw = 240, fh = dino.h*0.7;
-      ctx.save(); const grad = ctx.createLinearGradient(fx,fy,fx+fw,fy); grad.addColorStop(0,'rgba(255,237,213,0.95)'); grad.addColorStop(0.5,'rgba(251,146,60,0.85)'); grad.addColorStop(1,'rgba(239,68,68,0.0)'); ctx.fillStyle=grad;
-      ctx.beginPath(); ctx.moveTo(fx, fy - fh*0.35); ctx.lineTo(fx+fw, fy); ctx.lineTo(fx, fy + fh*0.35); ctx.closePath(); ctx.fill(); ctx.restore();
+      ctx.save();
+      const grad = ctx.createLinearGradient(fx,fy,fx+fw,fy);
+      grad.addColorStop(0,'rgba(255,237,213,0.95)');
+      grad.addColorStop(0.5,'rgba(251,146,60,0.85)');
+      grad.addColorStop(1,'rgba(239,68,68,0.00)');
+      ctx.fillStyle=grad;
+      ctx.beginPath();
+      ctx.moveTo(fx, fy - fh*0.35);
+      ctx.quadraticCurveTo(fx+fw*0.45, fy - fh*0.55, fx+fw, fy);
+      ctx.quadraticCurveTo(fx+fw*0.45, fy + fh*0.55, fx, fy + fh*0.35);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
     }
 
-    function draw(dt){ ctx.clearRect(0,0,canvas.width,canvas.height); for(const c of state.clouds) drawCloud(c); drawGround(); for(const ob of state.obstacles) drawOb(ob); for(const b of state.bullets) drawBullet(b); for(const p of state.powerups){ if(p.type==='chest') drawChest(p); else if(p.type==='star') drawStar(p); else if(p.type==='gun') drawGun(p); else if(p.type==='flame') drawFlamePowerup(p); else drawMiniPowerup(p); } for(const pb of state.pBullets) drawPlayerBullet(pb); drawParticles(); drawFollowers(); drawDino(); drawFlameBreath(); }
+    function draw(dt){
+      ctx.clearRect(0,0,W(),H());
+      for(const c of state.clouds){ c.x -= (20*c.layer + state.speed*0.05)*dt; if(c.x < -120) c.x = W()+120; drawCloud(c); }
+      drawGround();
 
-    function runSelfTests(){
-      const tests=[]; const assert=(n,c)=>tests.push({n,pass:!!c});
-      assert('start() exists', typeof start==='function');
-      assert('restart() exists', typeof restart==='function');
-      assert('attemptQuickRestart() exists', typeof attemptQuickRestart==='function');
+      state.palmWaves += dt*1.2;
+      for(const ob of state.obstacles) drawOb(ob);
+      for(const b of state.bullets) drawBullet(b);
+      for(const p of state.powerups){
+        if(p.type==='chest') drawChest(p);
+        else if(p.type==='star') drawStar(p);
+        else if(p.type==='gun') drawGun(p);
+        else if(p.type==='mini') drawMiniPowerup(p);
+        else if(p.type==='flame') drawFlamePowerup(p);
+      }
 
-      try{ state.obstacles.length=0; state.pBullets.length=0; const h=80,w=22; const ox=dino.x+120; const oy=groundY()-h; state.obstacles.push({type:'cactus',x:ox,y:oy,w,h}); state.pBullets.push({x:ox+2,y:oy+h*0.5,w:12,h:3,v:0}); const b0=state.obstacles.length; update(0); const b1=state.obstacles.length; assert('MG bullet destroys cactus', b1===b0-1); }catch(e){ assert('MG bullet destroys cactus (no error)', false); }
-
-      try{ state.obstacles.length=0; state.pBullets.length=0; const w=110,h=68; const ox=dino.x+140; const oy=groundY()-200; state.obstacles.push({type:'dragon',x:ox,y:oy,w,h,y0:oy,amp:80,freq:1.6,phase:0}); state.pBullets.push({x:ox+5,y:oy+h*0.5,w:12,h:3,v:0}); const a0=state.obstacles.length; update(0); const a1=state.obstacles.length; assert('MG bullet destroys dragon', a1===a0-1); }catch(e){ assert('MG bullet destroys dragon (no error)', false); }
-
-      try{ state.obstacles.length=0; state.bullets.length=0; const h=28,w=90; const yBase=groundY()-180; state.obstacles.push({type:'jet',x:dino.x+260,y:yBase,w,h,shootTimer:0.02,fired:false,y0:yBase,amp:20,freq:1,phase:0}); for(let i=0;i<30;i++) update(0.016); const count=state.bullets.length; for(let i=0;i<60;i++) update(0.016); assert('Jet fires once', count===1 && state.bullets.length===1); }catch(e){ assert('Jet fires once (no error)', false); }
-
-      try{ state.littles=0; state.powerups=[{type:'mini',x:dino.x,y:dino.y,w:20,h:20}]; update(0); const hpAfter=1+state.littles; assert('Pickup mini increases HP', hpAfter>=2); }catch(e){ assert('Pickup mini increases HP (no error)', false); }
-
-      try{ reset(); state.littles=2; state.obstacles=[{type:'cactus',x:dino.x+10,y:groundY()-60,w:22,h:60}]; update(0.016); const alive=!state.dead; const remaining=state.littles; assert('Hit reduces HP if littles>0', alive && remaining===1); }catch(e){ assert('Hit reduces HP if littles>0 (no error)', false); }
-
-      try{ state.score=1100; const before=state.night; update(0); assert('Night mode toggles after 1000', state.night===true || before!==state.night); }catch(e){ assert('Night mode toggles after 1000 (no error)', false); }
-
-      try{ reset(); state.powerups=[{type:'star',x:dino.x,y:dino.y,w:24,h:24}]; update(0.016); assert('Star grants invincibility', state.invincibleUntil>state.time); }catch(e){ assert('Star grants invincibility (no error)', false); }
-
-      try{ // restart 流程
-        reset(); state.dead=true; const ok = attemptQuickRestart(); assert('Quick restart from dead', ok && state.running===true);
-      }catch(e){ assert('Quick restart from dead (no error)', false); }
-
-      // 在主控台列印測試結果（不影響遊戲執行）
-      console.table(tests);
+      drawFlameBreath();
+      drawDino();
+      drawFollowers();
+      for(const pb of state.pBullets) drawPlayerBullet(pb);
+      drawParticles();
     }
-
-    function safeRAF(){ try{ requestAnimationFrame(()=>{}); }catch(_){} }
-
-    // 初始化
     reset();
-    // 跑一下自動測試；若不需要可註解
-    setTimeout(()=>{ try{ runSelfTests(); }catch(e){ console.warn('selftests error', e); } }, 50);
-
   })();
   </script>
 </body>
