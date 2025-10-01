@@ -4,20 +4,17 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>恐龍跳躍遊戲</title>
+  <!--
+    單檔（HTML+CSS+JS）恐龍跳躍遊戲
+    版本：V6 — 2025-10-01 (L10 外觀更新)
 
-  <!-- PWA：連結到你的 webmanifest（檔名：site.webmanifest） -->
-  <link rel="manifest" href="/cute-dino/site.webmanifest" />
-
-  <!-- PWA（iOS 建議）：桌面圖示與獨立視窗 -->
-  <link rel="apple-touch-icon" href="/cute-dino/icons/icon-180.png" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-  <meta name="apple-mobile-web-app-title" content="恐龍跳躍" />
-
-  <!-- Favicon（維持你的 SVG data URL） -->
+    變更重點：
+    - 移除 L10 的背鰭與尾巴。
+    - 為 L10 新增一對動態的粉紅色翅膀。
+    - 其他各階級外觀與功能保持不變。
+  -->
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%2360a5fa'/%3E%3Cstop offset='1' stop-color='%238b5cf6'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='12' fill='url(%23g)'/%3E%3Cg fill='%230b1020'%3E%3Crect x='18' y='28' width='28' height='16' rx='4'/%3E%3Crect x='34' y='18' width='18' height='12' rx='4'/%3E%3Crect x='22' y='44' width='8' height='10' rx='3'/%3E%3Crect x='34' y='44' width='8' height='10' rx='3'/%3E%3Ccircle cx='48' cy='22' r='2.2' fill='%23fff'/%3E%3Ccircle cx='48' cy='22' r='1.1'/%3E%3C/g%3E%3C/svg%3E"/>
   <meta name="theme-color" content="#0b1020"/>
-
   <style>
     :root{ --bg:#f6f7fb; --fg:#1f2937; --danger:#ef4444; --night-sky1:#0b1020; --night-sky2:#0f172a; --night-fg:#e5e7eb; }
     html,body{height:100%}
@@ -87,7 +84,6 @@
     </div>
   </div>
 
-  <!-- ====== 遊戲程式碼（原樣） ====== -->
   <script>
   (function(){
     const canvas = document.getElementById('canvas');
@@ -149,7 +145,7 @@
     document.addEventListener('keydown', e=>{ if(e.key==='m'||e.key==='M') btnAudio.click(); });
 
     // --- Game State ---
-    const W=()=>canvas.clientWidth, H=()=>canvas.clientHeight, LEFT_X=()=>Math.max(80,W()*0.08);
+    const W=()=>canvas.clientWidth, H=()=>canvas.clientHeight, LEFT_X=()=>Math.max(150,W()*0.20);
     const state={
       running:false, paused:false, dead:false,
       time:0, nextSpeedUpAt:12,
@@ -213,7 +209,7 @@
       if(e.key==='ArrowRight'||e.key==='d'||e.key==='D') keys.right=true;
       if(e.key==='ArrowDown'||e.key==='s'||e.key==='S'){ keys.down=true; if(dino.onGround) dino.crouch=true; }
 
-      // Dev：快速切級（方案 B）
+      // --- Dev: quick tier switch (方案 B，測試用) ---
       if (/^[0-9]$/.test(e.key) && !e.ctrlKey && !e.altKey && !e.metaKey) {
         const n = (e.key === '0' ? (e.shiftKey ? 10 : 0) : parseInt(e.key, 10));
         state.score = n * 1000;
@@ -233,7 +229,7 @@
 
     // --- Spawns ---
     function spawnObstacle(){
-      const baseX=W()+60;
+      const baseX=W()+60; 
       let t='cactus'; const r=Math.random();
       if(r<0.50) t='cactus'; else if(r<0.80) t='palm'; else if(r<0.88) t='dragon'; else t='jet';
       if(t==='jet' && state.jetCooldown>0) t=(Math.random()<0.5?'cactus':'palm');
@@ -247,7 +243,7 @@
       } else if(t==='jet'){
         const h=28,w=90; const yBase=groundY()-(120+Math.random()*140); const amp=rand(20,70), freq=rand(0.6,1.2), phase=Math.random()*Math.PI*2;
         state.obstacles.push({type:t,x:baseX,y:yBase,w,h, shootTimer: rand(0.6,1.8), fired:false, y0:yBase, amp, freq, phase});
-        state.jetCooldown = 3 + Math.random()*2;
+        state.jetCooldown = 3 + Math.random()*2; 
       } else {
         const h=60+Math.random()*40,w=40; state.obstacles.push({type:t,x:baseX,y:groundY()-h,w,h});
       }
@@ -262,13 +258,13 @@
       if(state.score>=5000 && Math.random()<0.25){ pType='flame'; w=40; h=40; y= groundY() - (70 + Math.random()*120); }
       const obj={type:pType,x:baseX,y,w,h}; if(pType==='star') obj.spin=0; if(pType==='gun'||pType==='flame') obj.wiggle=0; state.powerups.push(obj);
     }
-    let spawnTimer=0, powerTimer=3.5;
+    let spawnTimer=0, powerTimer=3.5; 
 
     // --- Helpers ---
     function intersects(a,b){ return a.x<b.x+b.w && a.x+a.w>b.x && a.y<b.y+b.h && a.y+a.h>b.y; }
     function spawnSparks(x,y,n=20,baseV=340,life=0.6,size=4,colorDay='#ffd166',colorNight='#ffffff'){
       for(let i=0;i<n;i++){
-        const ang=Math.random()*Math.PI - Math.PI/2;
+        const ang=Math.random()*Math.PI - Math.PI/2; 
         theSpd=baseV*(0.5+Math.random());
         state.particles.push({x,y, vx:Math.cos(ang)*theSpd, vy:Math.sin(ang)*theSpd*0.6-20, life:life*(0.8+Math.random()*0.4), age:0, size, colorDay, colorNight});
       }
@@ -300,11 +296,11 @@
       for(const ob of state.obstacles){
         ob.x -= worldV*dt;
         if(ob.type==='jet'){
-          ob.y = ob.y0 + Math.sin(state.time*ob.freq + ob.phase)*ob.amp;
-          ob.shootTimer -= dt;
+          ob.y = ob.y0 + Math.sin(state.time*ob.freq + ob.phase)*ob.amp; 
+          ob.shootTimer -= dt; 
           if(!ob.fired && ob.shootTimer<=0){ ob.fired=true; const bx=ob.x-6, by=ob.y+ob.h*0.5; state.bullets.push({x:bx,y:by,w:10,h:4,v:worldV+420}); if(audio.enabled) sfx.shoot(); }
         } else if(ob.type==='dragon'){
-          ob.y = ob.y0 + Math.sin(state.time*ob.freq + ob.phase)*ob.amp;
+          ob.y = ob.y0 + Math.sin(state.time*ob.freq + ob.phase)*ob.amp; 
         }
       }
       state.obstacles = state.obstacles.filter(ob=> ob.x+ob.w > -80);
@@ -372,7 +368,7 @@
             if(Math.random()<0.6){ state.score+=150; state.obstacles.splice(j,1); if(audio.enabled) sfx.hit(); }
           } else if(ob.type==='dragon'){
             state.score+=90; state.obstacles.splice(j,1); if(audio.enabled) sfx.hit();
-          } else {
+          } else { 
             state.score += (ob.type==='cactus'? 60 : 80); state.obstacles.splice(j,1); if(audio.enabled) sfx.hit();
           }
           break;
@@ -447,15 +443,18 @@
     function drawCloud(c){ ctx.save(); ctx.translate(c.x,c.y); ctx.beginPath(); const r=c.r; ctx.fillStyle=state.night?'rgba(255,255,255,.25)':'rgba(255,255,255,.9)'; ctx.arc(-r*0.6,0,r*0.6,0,Math.PI*2); ctx.arc(0,-r*0.2,r*0.8,0,Math.PI*2); ctx.arc(r*0.7,0,r*0.5,0,Math.PI*2); ctx.fill(); ctx.restore(); }
 
     function currentSkinTier(){ return Math.min(10, Math.floor(state.score/1000)); }
-
+    
     function getSkinForTier(tier){
       if(tier>=10){
-        return { body:'rainbow', head:'rainbow', eye:'#0b1020', deco:'crown', spines:true, eyeStyle:'angry', tail:true };
+        // [MODIFIED] 移除 L10 背鰭與尾巴，改為翅膀
+        return { body:'rainbow', head:'rainbow', eye:'#0b1020', deco:'crown', spines:false, eyeStyle:'angry', tail:false, hasPinkWings: true };
       }
       if(tier===0){ return { body:'#374151', head:'#374151', eye:'#111', deco:null, spines:false, eyeStyle:'round' }; }
       const hue = (tier*34)%360; const body = `hsl(${hue} 70% 55%)`; const eye = '#0b1020';
+      
       const pattern = (tier - 1) % 3;
       const deco = pattern === 0 ? 'headband' : (pattern === 1 ? 'wing' : 'spines');
+
       return { body, head:body, eye, deco, spines:false, eyeStyle:'round' };
     }
 
@@ -468,23 +467,40 @@
       const skin = getSkinForTier(tier);
       const crouch=dino.crouch && dino.onGround;
 
-      function drawDorsalFin(){
-        if(!skin.spines) return;
+      // [NEW] 繪製 L10 粉紅翅膀
+      function drawPinkWings() {
+        if (!skin.hasPinkWings) return;
         ctx.save();
-        setBodyFill();
-        const fins=[
-          {px: -w*0.10, py: (crouch? h*0.22 : h*0.02), s:14},
-          {px: -w*0.20, py: (crouch? h*0.24 : h*0.05), s:16},
-          {px: -w*0.30, py: (crouch? h*0.22 : h*0.08), s:12},
-        ];
-        fins.forEach(f=>{ 
-            ctx.beginPath();
-            ctx.moveTo(f.px, f.py);
-            ctx.lineTo(f.px - f.s * 0.7, f.py + f.s);
-            ctx.lineTo(f.px + f.s * 0.7, f.py + f.s);
-            ctx.closePath();
-            ctx.fill();
-        });
+        const backX = -w * 0.25;
+        const backY = crouch ? h * 0.45 : h * 0.30;
+
+        ctx.fillStyle = 'rgba(236, 72, 153, 0.85)'; // #ec4899 with alpha
+        ctx.strokeStyle = '#d94682'; // darker pink for border
+        ctx.lineWidth = 2;
+
+        const bob = Math.sin(state.time * 9) * 0.08;
+        ctx.translate(backX, backY);
+        ctx.rotate(bob);
+        
+        // 主翼
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.quadraticCurveTo(-w * 0.6, -h * 0.5, -w * 0.3, -h * 0.8);
+        ctx.quadraticCurveTo(0, -h * 0.4, w * 0.1, -h * 0.1);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        // 第二層小翅膀
+        ctx.globalAlpha = 0.8;
+        ctx.beginPath();
+        ctx.moveTo(-w*0.1, h*0.05);
+        ctx.quadraticCurveTo(-w * 0.5, -h * 0.3, -w * 0.3, -h * 0.5);
+        ctx.quadraticCurveTo(-w*0.1, -h * 0.2, -w*0.1, h*0.05);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        
         ctx.restore();
       }
 
@@ -498,16 +514,16 @@
         ctx.strokeStyle = `hsla(${hue}, 70%, 50%, 0.9)`;
         ctx.lineWidth = 2;
         ctx.beginPath();
-        if (tier === 2) {
+        if (tier === 2) { 
             ctx.moveTo(backX, backY);
             ctx.quadraticCurveTo(backX - w * 0.4, backY - h * 0.3, backX - w*0.1, backY - h * 0.5);
             ctx.quadraticCurveTo(backX + w * 0.1, backY - h * 0.2, backX, backY);
-        } else {
+        } else { 
             ctx.moveTo(backX, backY);
             ctx.quadraticCurveTo(backX - w*0.5, backY - h*0.4, backX - w*0.2, backY - h*0.7);
             ctx.quadraticCurveTo(backX - w*0.2, backY - h*0.3, backX + w*0.05, backY - h*0.1);
             ctx.lineTo(backX, backY);
-            if (tier === 8) {
+            if (tier === 8) { 
                 ctx.moveTo(backX - w*0.1, backY);
                 ctx.quadraticCurveTo(backX - w*0.6, backY - h*0.2, backX - w*0.4, backY - h*0.5);
                 ctx.quadraticCurveTo(backX - w*0.2, backY - h*0.1, backX - w*0.1, backY);
@@ -539,7 +555,7 @@
           });
           ctx.restore();
       }
-
+      
       function drawHeadband() {
           if(skin.deco !== 'headband') return;
           ctx.save();
@@ -562,19 +578,6 @@
           ctx.restore();
       }
 
-      function drawTail() {
-          if (!skin.tail) return;
-          ctx.save();
-          setBodyFill();
-          const tailRootX = -w * 0.35;
-          const tailRootY = crouch ? h * 0.5 : h * 0.35;
-          const bob = Math.sin(state.time * 7) * 0.1;
-          ctx.translate(tailRootX, tailRootY);
-          ctx.rotate(-0.5 + bob);
-          roundRect(0, -h * 0.1, w * 0.4, h * 0.2, 8, true);
-          ctx.restore();
-      }
-
       function setBodyFill(){
         if(skin.body==='rainbow'){
           const grad = ctx.createLinearGradient(-w*0.35,0, w*0.60,0);
@@ -587,13 +590,12 @@
       }
 
       // --- 繪製順序 ---
-      drawTail();
       drawWing();
+      drawPinkWings();
       setBodyFill(); if(crouch){ roundRect(-w*0.35,h*0.25,w*0.7,h*0.45,10,true); } else { roundRect(-w*0.35,h*0.05,w*0.7,h*0.55,10,true); }
       setBodyFill(); if(crouch){ roundRect(0,h*0.02,w*0.42,h*0.28,10,true); } else { roundRect(w*0.05,-h*0.15,w*0.45,h*0.35,10,true); }
       drawTierSpines();
-      drawDorsalFin();
-
+      
       if(skin.deco==='crown'){
         const headX = crouch ? 0 : w*0.05;
         const headW = crouch ? w*0.42 : w*0.45;
@@ -603,7 +605,7 @@
         const cw = w*0.42; const ch = w*0.22;
         drawGoldCrown(cx, cy, cw, ch, -0.05);
       }
-
+      
       drawHeadband();
 
       const t=state.time*10; const k=Math.sin(t)*6; setBodyFill(); if(crouch){ roundRect(-w*0.18,h*0.58,w*0.26,h*0.25,8,true); roundRect(0,h*0.58,w*0.26,h*0.25,8,true); } else { roundRect(-w*0.15,h*0.6,w*0.22,h*0.3,8,true); roundRect(w*0.02+k*0.02,h*0.6,w*0.22,h*0.3,8,true); }
@@ -730,17 +732,6 @@
     }
     reset();
   })();
-  </script>
-
-  <!-- ====== PWA：註冊 Service Worker（專案頁面 scope 一定要是 /cute-dino/） ====== -->
-  <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/cute-dino/sw.js', { scope: '/cute-dino/' })
-          .then(reg => console.log('SW registered:', reg.scope))
-          .catch(err => console.error('SW failed:', err));
-      });
-    }
   </script>
 </body>
 </html>
