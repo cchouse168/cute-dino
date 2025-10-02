@@ -6,12 +6,9 @@
   <title>恐龍跳躍遊戲</title>
   <!--
     單檔（HTML+CSS+JS）恐龍跳躍遊戲
-    版本：V8 — 2025-10-02 (得分特效)
-
-    變更重點：
-    - 火焰噴射摧毀障礙物時會增加分數。
-    - 使用武器摧毀障礙物時，會在畫面上顯示浮動的得分數字。
-    - 其他外觀與功能保持不變。
+    版本：V9.3 — 2025-10-03
+    - 修正：按「重新開始」後速度會變快 → reset() 強制回到初始速度/倍率並即時更新 HUD
+    - 強韌化：spawnSparks 未宣告變數修正、loop try/catch、畫布尺寸 0 防護、道具欄位初始化等
   -->
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%2360a5fa'/%3E%3Cstop offset='1' stop-color='%238b5cf6'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='12' fill='url(%23g)'/%3E%3Cg fill='%230b1020'%3E%3Crect x='18' y='28' width='28' height='16' rx='4'/%3E%3Crect x='34' y='18' width='18' height='12' rx='4'/%3E%3Crect x='22' y='44' width='8' height='10' rx='3'/%3E%3Crect x='34' y='44' width='8' height='10' rx='3'/%3E%3Ccircle cx='48' cy='22' r='2.2' fill='%23fff'/%3E%3Ccircle cx='48' cy='22' r='1.1'/%3E%3C/g%3E%3C/svg%3E"/>
   <meta name="theme-color" content="#0b1020"/>
@@ -102,20 +99,28 @@
     const volEl      = document.getElementById('vol');
     const gameDiv    = document.getElementById('game');
 
+    // —— 初始速度常數 —— 
+    const INITIAL_SPEED = 300;
+    const INITIAL_SPEED_SCALE = 1;
+    const INITIAL_SPEEDUP_EVERY = 12;
+
+    // —— 安全取得寬高（避免 0 導致 NaN）——
+    function safeClient(v, fallback){ return (v && isFinite(v) && v>0) ? v : fallback; }
     function fitCanvas(){
       const vw = window.innerWidth, vh = window.innerHeight;
-      let targetW = vw, targetH = Math.floor(vw * 9/20);
-      if(targetH > vh){ targetH = vh; targetW = Math.floor(vh * 20/9); }
+      let targetW = safeClient(vw, 1280), targetH = Math.floor(targetW * 9/20);
+      if(targetH > vh){ targetH = safeClient(vh, 576); targetW = Math.floor(targetH * 20/9); }
       gameDiv.style.width  = targetW + 'px';
       gameDiv.style.height = targetH + 'px';
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      canvas.width  = Math.floor(targetW * dpr);
-      canvas.height = Math.floor(targetH * dpr);
+      canvas.width  = Math.max(2, Math.floor(targetW * dpr));
+      canvas.height = Math.max(2, Math.floor(targetH * dpr));
       canvas.style.width  = targetW + 'px';
       canvas.style.height = targetH + 'px';
       ctx.setTransform(dpr,0,0,dpr,0,0);
     }
-    window.addEventListener('resize', fitCanvas); fitCanvas();
+    window.addEventListener('resize', fitCanvas);
+    fitCanvas();
 
     function isFullscreen(){ return document.fullscreenElement || document.webkitFullscreenElement; }
     function updateFSUI(){ btnFS.textContent = isFullscreen()? '退出全螢幕' : '全螢幕'; }
@@ -145,11 +150,13 @@
     document.addEventListener('keydown', e=>{ if(e.key==='m'||e.key==='M') btnAudio.click(); });
 
     // --- Game State ---
-    const W=()=>canvas.clientWidth, H=()=>canvas.clientHeight, LEFT_X=()=>Math.max(150,W()*0.20);
+    const W=()=>Math.max(2, canvas.clientWidth  || canvas.width  || 1280);
+    const H=()=>Math.max(2, canvas.clientHeight || canvas.height || 576);
+    const LEFT_X=()=>Math.max(150, W()*0.20);
     const state={
       running:false, paused:false, dead:false,
-      time:0, nextSpeedUpAt:12,
-      speed:300, speedScale:1, speedUpEvery:12,
+      time:0, nextSpeedUpAt:INITIAL_SPEEDUP_EVERY,
+      speed:INITIAL_SPEED, speedScale:INITIAL_SPEED_SCALE, speedUpEvery:INITIAL_SPEEDUP_EVERY,
       gravity:1800, jumpV:-820,
       score:0, best:0,
       obstacles:[], clouds:[], bullets:[], powerups:[], particles:[],
@@ -168,17 +175,42 @@
 
     // --- Lifecycle ---
     function reset(){
+      // —— 核心：速度/倍率回到初始，升速節點歸零 —— 
+      state.speed        = INITIAL_SPEED;
+      state.speedScale   = INITIAL_SPEED_SCALE;
+      state.speedUpEvery = INITIAL_SPEEDUP_EVERY;
+      state.time         = 0;
+      state.nextSpeedUpAt = state.speedUpEvery;
+
+      // 其他重置
       state.running=false; state.paused=false; state.dead=false;
-      state.time=0; state.nextSpeedUpAt=state.speedUpEvery;
-      state.speedScale=1; state.score=0;
-      state.obstacles.length=0; state.clouds.length=0; state.bullets.length=0; state.powerups.length=0; state.particles.length=0; state.pBullets.length=0;
+      state.score=0;
+      state.obstacles.length=0; state.clouds.length=0; state.bullets.length=0; 
+      state.powerups.length=0; state.particles.length=0; state.pBullets.length=0;
       state.floatingScores.length=0;
       state.palmWaves=0; state.invincibleUntil=0; state.night=false; state.littles=0;
       state.mgUntil=0; state.mgFireTimer=0; state.jetCooldown=0; state.fireUntil=0; state.flameSfxTimer=0;
       state.holdingJump=false; state.jumpHold=0;
+
       gameDiv.classList.remove('night');
-      dino.x=LEFT_X(); dino.h=dino.baseH; dino.y=groundY()-dino.h; dino.vy=0; dino.vx=0; dino.onGround=true; dino.crouch=false;
-      for(let i=0;i<6;i++) state.clouds.push({x:Math.random()*W(), y:40+Math.random()*H()*0.4, r:20+Math.random()*30, layer:0.3+Math.random()*0.4});
+
+      dino.x=LEFT_X(); 
+      dino.h=dino.baseH; 
+      dino.y=groundY()-dino.h; 
+      dino.vy=0; dino.vx=0; dino.onGround=true; dino.crouch=false;
+
+      for(let i=0;i<6;i++){
+        state.clouds.push({x:Math.random()*W(), y:40+Math.random()*H()*0.4, r:20+Math.random()*30, layer:0.3+Math.random()*0.4});
+      }
+
+      // —— 立刻更新 HUD，避免上一局倍率殘留 —— 
+      scoreEl.textContent = '分數：0';
+      speedEl.textContent = '速度：' + state.speedScale.toFixed(1) + '×';
+      buffEl.style.display = 'none';
+      mgHud.style.display = 'none';
+      fireHud.style.display = 'none';
+      hpHud.textContent = 'HP：1';
+
       tip.style.display='none';
       draw(0);
     }
@@ -225,7 +257,7 @@
 
     // --- Spawns ---
     function spawnObstacle(){
-      const baseX=W()+60; 
+      const baseX=W()+60;
       let t='cactus'; const r=Math.random();
       if(r<0.50) t='cactus'; else if(r<0.80) t='palm'; else if(r<0.88) t='dragon'; else t='jet';
       if(t==='jet' && state.jetCooldown>0) t=(Math.random()<0.5?'cactus':'palm');
@@ -239,7 +271,7 @@
       } else if(t==='jet'){
         const h=28,w=90; const yBase=groundY()-(120+Math.random()*140); const amp=rand(20,70), freq=rand(0.6,1.2), phase=Math.random()*Math.PI*2;
         state.obstacles.push({type:t,x:baseX,y:yBase,w,h, shootTimer: rand(0.6,1.8), fired:false, y0:yBase, amp, freq, phase});
-        state.jetCooldown = 3 + Math.random()*2; 
+        state.jetCooldown = 3 + Math.random()*2;
       } else {
         const h=60+Math.random()*40,w=40; state.obstacles.push({type:t,x:baseX,y:groundY()-h,w,h});
       }
@@ -252,17 +284,19 @@
       else if(r<0.85){ pType='gun';  w=52; h=28; y= groundY() - (70 + Math.random()*120); }
       else { pType='mini'; w=30; h=24; y= groundY() - h; }
       if(state.score>=5000 && Math.random()<0.25){ pType='flame'; w=40; h=40; y= groundY() - (70 + Math.random()*120); }
-      const obj={type:pType,x:baseX,y,w,h}; if(pType==='star') obj.spin=0; if(pType==='gun'||pType==='flame') obj.wiggle=0; state.powerups.push(obj);
+      const obj={type:pType,x:baseX,y:Math.max(0,y|0),w:Math.max(1,w|0),h:Math.max(1,h|0)};
+      obj.spin = 0; obj.wiggle = 0; // 初始化選用欄位，避免在 update 中遞增未定義
+      state.powerups.push(obj);
     }
-    let spawnTimer=0, powerTimer=3.5; 
+    let spawnTimer=0, powerTimer=3.5;
 
     // --- Helpers ---
     function intersects(a,b){ return a.x<b.x+b.w && a.x+a.w>b.x && a.y<b.y+b.h && a.y+a.h>b.y; }
     function spawnSparks(x,y,n=20,baseV=340,life=0.6,size=4,colorDay='#ffd166',colorNight='#ffffff'){
       for(let i=0;i<n;i++){
-        const ang=Math.random()*Math.PI - Math.PI/2; 
-        theSpd=baseV*(0.5+Math.random());
-        state.particles.push({x,y, vx:Math.cos(ang)*theSpd, vy:Math.sin(ang)*theSpd*0.6-20, life:life*(0.8+Math.random()*0.4), age:0, size, colorDay, colorNight});
+        const ang=Math.random()*Math.PI - Math.PI/2;
+        const spd = baseV*(0.5+Math.random()); // 修正：避免未宣告變數
+        state.particles.push({x,y, vx:Math.cos(ang)*spd, vy:Math.sin(ang)*spd*0.6-20, life:life*(0.8+Math.random()*0.4), age:0, size, colorDay, colorNight});
       }
     }
     function spawnFloatingScore(text, x, y) {
@@ -270,8 +304,22 @@
     }
 
     // --- Loop ---
-    let lastTs=0; function loop(ts){ if(!state.running||state.paused) return; const dt=Math.min(0.032,(ts-lastTs)/1000); lastTs=ts; update(dt); draw(dt); requestAnimationFrame(loop); }
-    function isNightForScore(score){ return (Math.floor(score/1000)%2)===1; }
+    let lastTs=0;
+    function loop(ts){
+      if(!state.running||state.paused) return;
+      try{
+        const rawDt = (ts-lastTs)/1000;
+        const dt = Math.min(0.032, Math.max(0.0005, rawDt || 0.016));
+        lastTs=ts;
+        update(dt);
+        draw(dt);
+        requestAnimationFrame(loop);
+      }catch(err){
+        console.error('[GameLoop Error]', err);
+        requestAnimationFrame(loop);
+      }
+    }
+    function isNightForScore(score){ const s=Number.isFinite(score)?score:0; return (Math.floor(s/1000)%2)===1; }
 
     function update(dt){
       state.time+=dt;
@@ -287,21 +335,40 @@
       const ax=(keys.left?-1400:0)+(keys.right?1400:0); dino.vx += ax*dt; dino.vx *= 0.88; const maxV=360; dino.vx=Math.max(-maxV,Math.min(maxV,dino.vx)); dino.x += dino.vx*dt; const minX=LEFT_X(), maxX=W()*0.6; if(dino.x<minX){ dino.x=minX; dino.vx=0; } if(dino.x>maxX){ dino.x=maxX; dino.vx=0; }
 
       spawnTimer -= dt; state.jetCooldown=Math.max(0,state.jetCooldown-dt);
-      if(spawnTimer<=0){ spawnObstacle(); const worldVForGap=state.speed*state.speedScale; const gapPx=rand(360,720); spawnTimer = gapPx/Math.max(120,worldVForGap); }
-      powerTimer -= dt; if(powerTimer<=0){ powerTimer=5.5+Math.random()*4.5; spawnPowerup(); }
+      if(spawnTimer<=0){
+        spawnObstacle();
+        const worldVForGap=Math.max(120, state.speed*state.speedScale);
+        const gapPx=rand(360,720);
+        spawnTimer = gapPx/worldVForGap;
+      }
+      powerTimer = Math.max(-1, powerTimer - dt);
+      if(powerTimer<=0){ powerTimer=5.5+Math.random()*4.5; spawnPowerup(); }
 
-      const worldV=state.speed*state.speedScale;
+      const worldV=Math.max(60, state.speed*state.speedScale);
 
       for(const ob of state.obstacles){
         ob.x -= worldV*dt;
-        if(ob.type==='jet'){ ob.y = ob.y0 + Math.sin(state.time*ob.freq + ob.phase)*ob.amp; ob.shootTimer -= dt; if(!ob.fired && ob.shootTimer<=0){ ob.fired=true; const bx=ob.x-6, by=ob.y+ob.h*0.5; state.bullets.push({x:bx,y:by,w:10,h:4,v:worldV+420}); if(audio.enabled) sfx.shoot(); }}
-        else if(ob.type==='dragon'){ ob.y = ob.y0 + Math.sin(state.time*ob.freq + ob.phase)*ob.amp; }
+        if(ob.type==='jet'){
+          ob.y = ob.y0 + Math.sin(state.time*ob.freq + ob.phase)*ob.amp;
+          ob.shootTimer -= dt;
+          if(!ob.fired && ob.shootTimer<=0){
+            ob.fired=true; const bx=ob.x-6, by=ob.y+ob.h*0.5;
+            state.bullets.push({x:bx,y:by,w:10,h:4,v:worldV+420});
+            if(audio.enabled) sfx.shoot();
+          }
+        } else if(ob.type==='dragon'){ ob.y = ob.y0 + Math.sin(state.time*ob.freq + ob.phase)*ob.amp; }
       }
       state.obstacles = state.obstacles.filter(ob=> ob.x+ob.w > -80);
-      for(const b of state.bullets){ b.x -= b.v*dt; }
+
+      for(const b of state.bullets){ b.x -= Math.max(120,b.v)*dt; }
       state.bullets = state.bullets.filter(b=> b.x+b.w > -60);
-      for(const p of state.powerups){ p.x -= worldV*0.9*dt; if(p.type==='star') p.spin += dt*6; if(p.type==='gun'||p.type==='flame'){ p.wiggle += dt*4; p.y += Math.sin(p.wiggle)*0.3; } }
-      state.powerups = state.powerups.filter(p=> p.x+p.w > -60);
+
+      for(const p of state.powerups){
+        p.x -= worldV*0.9*dt;
+        p.spin += (p.type==='star'? dt*6 : 0);
+        if(p.type==='gun'||p.type==='flame'){ p.wiggle += dt*4; p.y += Math.sin(p.wiggle)*0.3; }
+      }
+      state.powerups = state.powerups.filter(p=> p.x+p.w > -60 && Number.isFinite(p.x) && Number.isFinite(p.y));
 
       state.score += worldV*dt*0.02; scoreEl.textContent=`分數：${Math.floor(state.score)}`; speedEl.textContent=`速度：${state.speedScale.toFixed(1)}×`;
       const nightNow = isNightForScore(state.score); if(state.night!==nightNow){ state.night=nightNow; if(nightNow) gameDiv.classList.add('night'); else gameDiv.classList.remove('night'); }
@@ -313,7 +380,7 @@
 
       const dbox={x:dino.x-dino.w*0.45, y:dino.y, w:dino.w*0.9, h:dino.h};
       for(let i=state.powerups.length-1;i>=0;i--){ const p=state.powerups[i]; if(intersects(dbox,p)){
-        if(p.type==='chest'){ state.score+=100; if(audio.enabled) sfx.pickup(); }
+        if(p.type==='chest'){ state.score+=100; spawnFloatingScore(100, p.x + p.w / 2, p.y); if(audio.enabled) sfx.pickup(); }
         else if(p.type==='star'){ state.invincibleUntil = state.time+6.0; if(audio.enabled) sfx.star(); }
         else if(p.type==='gun'){ state.mgUntil = state.time+6.0; state.mgFireTimer=0; if(audio.enabled) sfx.gun(); }
         else if(p.type==='mini'){ state.littles++; if(audio.enabled) sfx.pickup(); }
@@ -324,8 +391,7 @@
       if(inv){
         for(let j=state.obstacles.length-1;j>=0;j--){ const ob=state.obstacles[j]; if(intersects(dbox,{x:ob.x,y:ob.y,w:ob.w,h:ob.h})){ spawnSparks(ob.x+ob.w*0.5, ob.y+ob.h*0.5,22,360,0.7,5); if(audio.enabled) sfx.starHit(); state.obstacles.splice(j,1);} }
         for(let k=state.bullets.length-1;k>=0;k--){ const b=state.bullets[k]; if(intersects(dbox,b)){ spawnSparks(b.x,b.y,14,320,0.6,4); if(audio.enabled) sfx.starHit(); state.bullets.splice(k,1);} }
-      }
-      if(!inv){
+      } else {
         let collided=false;
         for(let j=state.obstacles.length-1;j>=0;j--){ const ob=state.obstacles[j]; if(intersects(dbox,{x:ob.x,y:ob.y,w:ob.w,h:ob.h})){ collided=true; spawnSparks(ob.x+ob.w*0.5, ob.y+ob.h*0.5,20,340,0.6,4); state.obstacles.splice(j,1); break; }}
         for(let k=state.bullets.length-1;k>=0 && !collided;k--){ const b=state.bullets[k]; if(intersects(dbox,b)){ collided=true; spawnSparks(b.x,b.y,14,320,0.5,4); state.bullets.splice(k,1); break; }}
@@ -340,33 +406,31 @@
         state.flameSfxTimer -= dt;
         if(state.flameSfxTimer <= 0){ if(audio.enabled) sfx.flameLoop(); state.flameSfxTimer = 0.18 + Math.random() * 0.1; }
         const fx = dino.x + dino.w*0.35; const fy = dino.y + dino.h*0.18; const fw = 240; const fh = dino.h*0.7; const flameBox = {x:fx, y:fy - fh*0.5, w:fw, h:fh};
-        for(let j=state.obstacles.length-1;j>=0;j--){ const ob=state.obstacles[j]; if(intersects(flameBox,{x:ob.x,y:ob.y,w:ob.w,h:ob.h})){ 
-            const scoreToAdd = 40; 
-            state.score += scoreToAdd;
-            spawnFloatingScore(scoreToAdd, ob.x + ob.w / 2, ob.y);
-            spawnSparks(ob.x+ob.w*0.5, ob.y+ob.h*0.5, 18, 320, 0.55, 4.5, '#ffd166', '#ffffff'); if(audio.enabled) sfx.flameHit(); state.obstacles.splice(j,1); 
+        for(let j=state.obstacles.length-1;j>=0;j--){ const ob=state.obstacles[j]; if(intersects(flameBox,{x:ob.x,y:ob.y,w:ob.w,h:ob.h})){
+            const scoreToAdd = 40; state.score += scoreToAdd; spawnFloatingScore(scoreToAdd, ob.x + ob.w / 2, ob.y);
+            spawnSparks(ob.x+ob.w*0.5, ob.y+ob.h*0.5, 18, 320, 0.55, 4.5, '#ffd166', '#ffffff'); if(audio.enabled) sfx.flameHit(); state.obstacles.splice(j,1);
         }}
         for(let k=state.bullets.length-1;k>=0;k--){ const b=state.bullets[k]; if(intersects(flameBox,b)){ spawnSparks(b.x + b.w * 0.5, b.y + b.h * 0.5, 12, 280, 0.45, 4, '#ffd166', '#ffffff'); if(audio.enabled) sfx.flameHit(); state.bullets.splice(k,1);} }
       }
 
       for(let i=state.pBullets.length-1;i>=0;i--){
         const pb=state.pBullets[i]; let collided=false;
-        for(let j=state.obstacles.length-1;j>=0;j--){ const ob=state.obstacles[j]; if(intersects(pb,{x:ob.x,y:ob.y,w:ob.w,h:ob.h})){ 
-            collided=true; const sx=ob.x+ob.w*0.6, sy=ob.y+ob.h*0.5; 
-            spawnSparks(sx,sy,26,380,0.75,5); 
+        for(let j=state.obstacles.length-1;j>=0;j--){ const ob=state.obstacles[j]; if(intersects(pb,{x:ob.x,y:ob.y,w:ob.w,h:ob.h})){
+            collided=true; const sx=ob.x+ob.w*0.6, sy=ob.y+ob.h*0.5;
+            spawnSparks(sx,sy,26,380,0.75,5);
             let scoreToAdd = 0;
-            if(ob.type==='jet'){ if(Math.random()<0.6){ scoreToAdd=150; state.obstacles.splice(j,1); if(audio.enabled) sfx.hit(); } } 
-            else if(ob.type==='dragon'){ scoreToAdd=90; state.obstacles.splice(j,1); if(audio.enabled) sfx.hit(); } 
-            else { scoreToAdd = (ob.type==='cactus'? 60 : 80); state.obstacles.splice(j,1); if(audio.enabled) sfx.hit(); } 
+            if(ob.type==='jet'){ if(Math.random()<0.6){ scoreToAdd=150; state.obstacles.splice(j,1); if(audio.enabled) sfx.hit(); } }
+            else if(ob.type==='dragon'){ scoreToAdd=90; state.obstacles.splice(j,1); if(audio.enabled) sfx.hit(); }
+            else { scoreToAdd = (ob.type==='cactus'? 60 : 80); state.obstacles.splice(j,1); if(audio.enabled) sfx.hit(); }
             if(scoreToAdd > 0){ state.score += scoreToAdd; spawnFloatingScore(scoreToAdd, sx, sy); }
-            break; 
+            break;
         }}
         if(collided || pb.x>W()+60){ state.pBullets.splice(i,1); }
       }
 
       for(const p of state.particles){ p.age+=dt; p.x+=p.vx*dt; p.y+=p.vy*dt; p.vy += 900*dt*0.6; }
       state.particles = state.particles.filter(p=> p.age<p.life);
-      
+
       for (const fs of state.floatingScores) { fs.age += dt; fs.y -= 25 * dt; }
       state.floatingScores = state.floatingScores.filter(fs => fs.age < fs.life);
     }
@@ -379,7 +443,7 @@
         `<div style="font-size:18px; font-weight:800; margin-bottom:10px">遊戲結束！分數：${Math.floor(state.score)} · 最高：${state.best}</div>
          <div class="muted" style="font-size:14px; margin-bottom:10px">按 R 重新開始 · 空白鍵/Enter 也可重來 · 空白鍵跳躍（可長按） · ↓/S 蹲下</div>
          <div id="tapRestart" style="display:flex;align-items:center;justify-content:center;gap:10px;user-select:none">
-           <svg width="36" height="36" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.708" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 4v4h4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+           <svg width="36" height="36" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.708" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
            <span style="font-weight:700">點一下螢幕任一處即可重來</span>
          </div>`;
       const restartOnTap = (ev)=>{ ev.preventDefault(); restart(); };
@@ -411,11 +475,8 @@
     function drawCloud(c){ ctx.save(); ctx.translate(c.x,c.y); ctx.beginPath(); const r=c.r; ctx.fillStyle=state.night?'rgba(255,255,255,.25)':'rgba(255,255,255,.9)'; ctx.arc(-r*0.6,0,r*0.6,0,Math.PI*2); ctx.arc(0,-r*0.2,r*0.8,0,Math.PI*2); ctx.arc(r*0.7,0,r*0.5,0,Math.PI*2); ctx.fill(); ctx.restore(); }
 
     function currentSkinTier(){ return Math.min(10, Math.floor(state.score/1000)); }
-    
     function getSkinForTier(tier){
-      if(tier>=10){
-        return { body:'rainbow', head:'rainbow', eye:'#0b1020', deco:'crown', spines:false, eyeStyle:'angry', tail:false, hasPinkWings: true };
-      }
+      if(tier>=10){ return { body:'rainbow', head:'rainbow', eye:'#0b1020', deco:'crown', spines:false, eyeStyle:'angry', tail:false, hasPinkWings: true }; }
       if(tier===0){ return { body:'#374151', head:'#374151', eye:'#111', deco:null, spines:false, eyeStyle:'round' }; }
       const hue = (tier*34)%360; const body = `hsl(${hue} 70% 55%)`; const eye = '#0b1020';
       const pattern = (tier - 1) % 3;
@@ -467,7 +528,7 @@
           spinePoints.forEach(p => { ctx.beginPath(); ctx.moveTo(p.px, p.py); ctx.lineTo(p.px - 5, p.py + 10); ctx.lineTo(p.px + 5, p.py + 10); ctx.closePath(); ctx.fill(); });
           ctx.restore();
       }
-      
+
       function drawHeadband() {
           if(skin.deco !== 'headband') return;
           ctx.save();
@@ -507,12 +568,22 @@
     function drawFollower(x,y,scale, skin){
       ctx.save(); ctx.translate(x,y); const w=70*(scale||0.55),h=70*(scale||0.55);
       const body=skin?.body || '#4b5563'; const head=skin?.head || body; const eye=skin?.eye || '#111';
-      ctx.fillStyle=body; roundRect(-w*0.35,h*0.05,w*0.7,h*0.55,8,true);
-      ctx.fillStyle=head; roundRect(w*0.05,-h*0.15,w*0.45,h*0.35,8,true);
+       if (body === 'rainbow') {
+        const grad = ctx.createLinearGradient(-w*0.35,0, w*0.60,0);
+        const stops=[[0,'#ef4444'],[0.16,'#f59e0b'],[0.33,'#facc15'],[0.50,'#10b981'],[0.66,'#3b82f6'],[0.83,'#8b5cf6'],[1,'#ec4899']];
+        stops.forEach(([p,c])=>grad.addColorStop(p,c));
+        ctx.fillStyle=grad;
+      } else {
+        ctx.fillStyle=body;
+      }
+      roundRect(-w*0.35,h*0.05,w*0.7,h*0.55,8,true);
+      if (head !== 'rainbow') { ctx.fillStyle=head; }
+      roundRect(w*0.05,-h*0.15,w*0.45,h*0.35,8,true);
       ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(w*0.38,-h*0.02,3.2,0,Math.PI*2); ctx.fill();
       ctx.fillStyle=eye; ctx.beginPath(); ctx.arc(w*0.38,-h*0.02,1.5,0,Math.PI*2); ctx.fill();
       ctx.restore();
     }
+
     function drawFollowers(){
       const skin = getSkinForTier(currentSkinTier());
       const baseY = dino.y + (dino.h - 40);
@@ -531,7 +602,24 @@
     function drawJet(ob){ const {x,y,w,h}=ob; ctx.save(); ctx.translate(x,y); ctx.fillStyle=state.night? '#60a5fa' : '#111827'; ctx.beginPath(); ctx.moveTo(0,h*0.5); ctx.lineTo(w*0.55,h*0.5); ctx.lineTo(w*0.85,h*0.35); ctx.lineTo(w,h*0.5); ctx.lineTo(w*0.85,h*0.65); ctx.lineTo(w*0.55,h*0.5); ctx.closePath(); ctx.fill(); ctx.beginPath(); ctx.moveTo(w*0.22,0); ctx.lineTo(w*0.52,h*0.5); ctx.lineTo(w*0.22,h); ctx.closePath(); ctx.fill(); const flame=6+6*Math.sin(state.time*20); ctx.fillStyle=state.night? '#fbbf24' : '#f59e0b'; ctx.beginPath(); ctx.moveTo(-flame,h*0.5); ctx.lineTo(0,h*0.4); ctx.lineTo(0,h*0.6); ctx.closePath(); ctx.fill(); ctx.restore(); }
     function drawDragon(ob){ const {x,y,w,h}=ob; ctx.save(); ctx.translate(x,y); ctx.fillStyle = '#f59e0b'; roundRect(w*0.05,h*0.15,w*0.70,h*0.55,16,true); ctx.fillStyle = '#fde68a'; roundRect(w*0.16,h*0.36,w*0.46,h*0.28,10,true); ctx.fillStyle = '#f59e0b'; roundRect(-w*0.08,h*0.18,w*0.34,h*0.30,14,true); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(w*0.12,h*0.30,5,0,Math.PI*2); ctx.fill(); ctx.fillStyle='#111'; ctx.beginPath(); ctx.arc(w*0.12,h*0.30,2.4,0,Math.PI*2); ctx.fill(); ctx.fillStyle = state.night? '#93c5fd' : '#10b981'; ctx.beginPath(); ctx.moveTo(w*0.38,h*0.18); ctx.quadraticCurveTo(w*0.78,0,w*0.98,h*0.18); ctx.quadraticCurveTo(w*0.72,h*0.34,w*0.38,h*0.22); ctx.closePath(); ctx.fill(); ctx.fillStyle = '#f59e0b'; ctx.beginPath(); ctx.moveTo(w*0.70,h*0.58); ctx.quadraticCurveTo(w*0.92,h*0.70,w*1.02,h*0.58); ctx.lineTo(w*0.86,h*0.52); ctx.closePath(); ctx.fill(); ctx.restore(); }
     function drawPalm(ob){ const {x,y,w,h}=ob; ctx.save(); ctx.translate(x + w*0.5, y + h); ctx.fillStyle = '#8b5a2b'; roundRect(-w*0.25, -h, w*0.5, h, 6, true); ctx.translate(0, -h); ctx.rotate(Math.sin(state.palmWaves + x*0.01) * 0.06); const leaf = (ang)=>{ ctx.save(); ctx.rotate(ang); ctx.fillStyle = '#10b981'; ctx.beginPath(); ctx.moveTo(0,0); ctx.quadraticCurveTo(32,-6,64,0); ctx.quadraticCurveTo(32,6,0,0); ctx.fill(); ctx.restore(); }; leaf(-0.6); leaf(0); leaf(0.6); ctx.restore(); }
-    function drawMiniPowerup(p){ const {x,y,w,h}=p; ctx.save(); ctx.translate(x,y); ctx.fillStyle='#374151'; roundRect(0,h*0.25,w*0.8,h*0.6,6,true); ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(w*0.6,h*0.45,2.5,0,Math.PI*2); ctx.fill(); ctx.restore(); }
+
+    function drawMiniPowerup(p){
+      const {x,y,w,h}=p;
+      ctx.save(); ctx.translate(x,y);
+      const tier = currentSkinTier();
+      if (tier >= 10) {
+        const grad = ctx.createLinearGradient(0,0, w*0.8, 0);
+        const stops=[[0,'#ef4444'],[0.2,'#facc15'],[0.4,'#10b981'],[0.6,'#3b82f6'],[0.8,'#8b5cf6'],[1,'#ec4899']];
+        stops.forEach(([pos,c])=>grad.addColorStop(pos,c));
+        ctx.fillStyle = grad;
+      } else {
+        ctx.fillStyle='#374151';
+      }
+      roundRect(0,h*0.25,w*0.8,h*0.6,6,true);
+      ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(w*0.6,h*0.45,2.5,0,Math.PI*2); ctx.fill();
+      ctx.restore();
+    }
+
     function drawBullet(b){ ctx.save(); ctx.translate(b.x,b.y); ctx.fillStyle=state.night? '#e5e7eb' : '#ef4444'; ctx.fillRect(0,0,b.w,b.h); ctx.restore(); }
     function drawChest(p){ const {x,y,w,h}=p; ctx.save(); ctx.translate(x,y); ctx.fillStyle='#f59e0b'; roundRect(0,0,w,h,4,true); ctx.fillStyle='#8b5a2b'; ctx.fillRect(0,h*0.5,w,h*0.18); ctx.fillStyle='#fff'; ctx.fillRect(w*0.48,h*0.2,w*0.04,h*0.6); ctx.fillRect(w*0.3,h*0.45,w*0.4,h*0.08); ctx.restore(); }
     function drawStar(p){ const {x,y,w,h,spin}=p; const r=Math.min(w,h)/2; ctx.save(); ctx.translate(x+w/2,y+h/2); ctx.rotate(spin); const spikes=5; let rot=Math.PI/2*3; const step=Math.PI/spikes; ctx.beginPath(); ctx.moveTo(0,-r); for(let i=0;i<spikes;i++){ ctx.lineTo(Math.cos(rot)*r,Math.sin(rot)*r); rot+=step; ctx.lineTo(Math.cos(rot)*r*0.5,Math.sin(rot)*r*0.5); rot+=step; } ctx.lineTo(0,-r); ctx.closePath(); ctx.fillStyle='#facc15'; ctx.fill(); ctx.restore(); }
